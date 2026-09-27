@@ -43,6 +43,26 @@ export const GOOGLE_LIVE_MODEL_GROUPS: GoogleLiveModelSection[] = [
 export const GOOGLE_LIVE_MODEL_OPTIONS = GOOGLE_LIVE_MODEL_GROUPS.flatMap((group) => group.options);
 export const GOOGLE_LIVE_SUPPORTED_MODELS = GOOGLE_LIVE_MODEL_OPTIONS.map((model) => model.value);
 
+// https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live
+// Model availability is distinct from the generic Vertex endpoint region list.
+export const GEMINI_3_8_LIVE_VERTEX_REGIONS = ['us-central1', 'us', 'eu'] as const;
+
+export function getGemini38LiveVertexRegionSupport(
+    model: unknown,
+    useVertex: boolean,
+    region: unknown,
+): 'supported' | 'unsupported' | 'unsupported-endpoint' | null {
+    if (!useVertex || normalizeGoogleLiveModelForUi(model) !== 'gemini-3.8-live') return null;
+    const selectedRegion = typeof region === 'string' && region.trim() ? region.trim() : 'us-central1';
+    if (selectedRegion === 'us-central1') return 'supported';
+    // The app currently constructs a regional `${location}-aiplatform.googleapis.com`
+    // WebSocket host. Google's us/eu multi-regions use different endpoint hosts.
+    if (GEMINI_3_8_LIVE_VERTEX_REGIONS.some(supported => supported === selectedRegion)) {
+        return 'unsupported-endpoint';
+    }
+    return 'unsupported';
+}
+
 export function isGoogleLiveModelCompatible(model: string, useVertex: boolean): boolean {
     const normalized = normalizeGoogleLiveModelForUi(model);
     const group = GOOGLE_LIVE_MODEL_GROUPS.find(section =>

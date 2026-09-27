@@ -9,6 +9,7 @@ import OutputResamplerField from './OutputResamplerField';
 import {
     GOOGLE_LIVE_MODEL_GROUPS,
     GOOGLE_LIVE_SUPPORTED_MODELS,
+    getGemini38LiveVertexRegionSupport,
     isGoogleLiveModelCompatible,
     normalizeGoogleLiveModelForUi,
 } from '../../../utils/googleLiveModels';
@@ -149,6 +150,11 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
     }, [config.use_vertex_ai]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const selectedModel = normalizeGoogleLiveModelForUi(config.llm_model);
+    const vertexRegionSupport = getGemini38LiveVertexRegionSupport(
+        config.llm_model,
+        Boolean(config.use_vertex_ai),
+        config.vertex_location,
+    );
     const vertexUploadLabel = uploading
         ? 'Uploading...'
         : credentials?.uploaded && !credentials?.configured
@@ -433,8 +439,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                                     <strong>Vertex AI region</strong> — which GCP region serves the Live API endpoint.
                                                     <ul className="list-disc pl-4 mt-1 space-y-0.5">
                                                         <li><code>us-central1</code> (Iowa) is the default and has the widest model availability</li>
-                                                        <li>Pick the region closest to your Asterisk PBX for lower round-trip latency</li>
-                                                        <li>Some preview models are only available in <code>us-central1</code></li>
+                                                        <li>Check supported regions for the selected model before choosing the closest endpoint</li>
                                                     </ul>
                                                 </>
                                             }
@@ -443,26 +448,47 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                         />
                                     </div>
                                     <select
-                                        className="w-full p-2 rounded border border-input bg-background"
+                                        className={`w-full p-2 rounded border bg-background ${vertexRegionSupport === 'unsupported' || vertexRegionSupport === 'unsupported-endpoint' ? 'border-red-500' : 'border-input'}`}
                                         value={config.vertex_location || 'us-central1'}
                                         onChange={(e) => handleChange('vertex_location', e.target.value)}
+                                        aria-invalid={vertexRegionSupport === 'unsupported' || vertexRegionSupport === 'unsupported-endpoint'}
                                     >
                                         {regions.length > 0 ? (
                                             regions.map((region) => (
                                                 <option key={region.value} value={region.value}>
-                                                    {region.label}
+                                                    {region.label}{vertexRegionSupport !== null && getGemini38LiveVertexRegionSupport(config.llm_model, true, region.value) === 'unsupported' ? ' — unavailable for Gemini 3.8 Live' : ''}
                                                 </option>
                                             ))
                                         ) : (
                                             <>
                                                 <option value="us-central1">US Central (Iowa)</option>
-                                                <option value="us-east1">US East (South Carolina)</option>
-                                                <option value="europe-west1">Europe West (Belgium)</option>
-                                                <option value="asia-northeast1">Asia Northeast (Tokyo)</option>
+                                                <option value="us-east1">US East (South Carolina){vertexRegionSupport !== null ? ' — unavailable for Gemini 3.8 Live' : ''}</option>
+                                                <option value="europe-west1">Europe West (Belgium){vertexRegionSupport !== null ? ' — unavailable for Gemini 3.8 Live' : ''}</option>
+                                                <option value="asia-northeast1">Asia Northeast (Tokyo){vertexRegionSupport !== null ? ' — unavailable for Gemini 3.8 Live' : ''}</option>
                                             </>
                                         )}
                                     </select>
-                                    <p className="text-xs text-muted-foreground">Region for Vertex AI endpoint</p>
+                                    {vertexRegionSupport === 'unsupported' ? (
+                                        <p role="alert" className="text-xs text-red-600 flex items-start gap-1">
+                                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                                            <span>
+                                                Google does not list Gemini 3.8 Live in this region. Choose US Central (Iowa) before saving.{' '}
+                                                <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live" target="_blank" rel="noopener noreferrer" className="underline">Google model regions ↗</a>
+                                            </span>
+                                        </p>
+                                    ) : vertexRegionSupport === 'unsupported-endpoint' ? (
+                                        <p role="alert" className="text-xs text-red-600 flex items-start gap-1">
+                                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                                            <span>Google lists Gemini 3.8 Live in this multi-region, but this app does not yet use its required multi-region WebSocket endpoint. Choose US Central (Iowa) before saving.</span>
+                                        </p>
+                                    ) : vertexRegionSupport === 'supported' ? (
+                                        <p role="status" className="text-xs text-green-600 flex items-start gap-1">
+                                            <CheckCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                                            <span>Gemini 3.8 Live is listed in this region. Project access is still verified when a Live session starts.</span>
+                                        </p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">Region for Vertex AI endpoint</p>
+                                    )}
                                 </div>
                             </div>
                         </div>
