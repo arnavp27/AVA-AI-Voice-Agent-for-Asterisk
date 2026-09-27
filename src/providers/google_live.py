@@ -160,6 +160,8 @@ class GoogleLiveProvider(AIProviderInterface):
     - Output: 24kHz PCM16 from Gemini → 8kHz µ-law/PCM16 → AudioSocket
     """
     DEFAULT_LIVE_MODEL = "gemini-2.5-flash-native-audio-latest"
+    GEMINI_3_8_LIVE_MODEL = "gemini-3.8-live"
+    GEMINI_3_8_NON_BLOCKING_TOOLS = frozenset({"check_extension_status"})
     LEGACY_LIVE_MODEL_MAP = {
         # Older preview aliases that are no longer preferred.
         "gemini-live-2.5-flash-preview": DEFAULT_LIVE_MODEL,
@@ -181,6 +183,10 @@ class GoogleLiveProvider(AIProviderInterface):
         self.websocket: Optional[ClientConnection] = None
         self._receive_task: Optional[asyncio.Task] = None
         self._keepalive_task: Optional[asyncio.Task] = None
+        self._tool_call_tasks: Dict[str, asyncio.Task] = {}
+        self._active_tool_call_ids: set[str] = set()
+        self._tool_call_names: Dict[str, str] = {}
+        self._tool_call_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
         self._gating_manager = gating_manager
 
@@ -994,6 +1000,11 @@ class GoogleLiveProvider(AIProviderInterface):
         system_prompt = self.config.instructions
         
         response_modalities = self._normalize_response_modalities(self.config.response_modalities)
+        model_name = self._normalize_model_name(self.config.llm_model)
+        is_gemini_3_8 = model_name == self.GEMINI_3_8_LIVE_MODEL
+        if is_gemini_3_8 and response_modalities != ["AUDIO"]:
+            logger.warning("Gemini 3.8 Live supports AUDIO responses only; overriding response modalities", call_id=self._call_id)
+            response_modalities = ["AUDIO"]
 
         # Build generation config from configurable parameters
         # https://gist.github.com/quartzjer/9636066e96b4f904162df706210770e4
@@ -1034,6 +1045,15 @@ class GoogleLiveProvider(AIProviderInterface):
             try:
                 # Use format_tools() with filtered tool list from context
                 tools = self._tool_adapter.format_tools(tool_names)
+                if is_gemini_3_8:
+                    # Only the read-only extension availability lookup is safe to
+                    # run concurrently. Call-state and telephony actions must block.
+                    for tool in tools:
+                        for declaration in tool.get("functionDeclarations", []):
+                            declaration["behavior"] = (
+                                "NON_BLOCKING" if declaration.get("name") in self.GEMINI_3_8_NON_BLOCKING_TOOLS
+                                else "BLOCKING"
+                            )
                 if tools:
                     tool_count = len(tools[0].get("functionDeclarations", [])) if tools else 0
                     logger.debug(
@@ -1047,7 +1067,6 @@ class GoogleLiveProvider(AIProviderInterface):
 
         # Setup message
         # Strip any accidental "models/" prefix from config to avoid models/models/...
-        model_name = self._normalize_model_name(self.config.llm_model)
         if model_name.startswith("models/"):
             model_name = model_name[7:]  # Remove "models/" prefix
 
@@ -1489,6 +1508,14 @@ class GoogleLiveProvider(AIProviderInterface):
                 error=str(e),
                 exc_info=True,
             )
+        finally:
+            # A closed socket must not leave call-state actions running without
+            # a channel to return their results (including unexpected closes).
+            if self._tool_call_tasks:
+                tasks = list(self._tool_call_tasks.values())
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _handle_server_message(self, data: Dict[str, Any]) -> None:
         """Handle incoming message from Gemini Live API."""
@@ -1522,7 +1549,10 @@ class GoogleLiveProvider(AIProviderInterface):
         elif message_type == "serverContent":
             await self._handle_server_content(data)
         elif message_type == "toolCall":
-            await self._handle_tool_call(data)
+            if self._normalize_model_name(self.config.llm_model) == self.GEMINI_3_8_LIVE_MODEL:
+                self._schedule_3_8_tool_calls(data)
+            else:
+                await self._handle_tool_call(data)
         elif message_type == "toolCallCancellation":
             await self._handle_tool_call_cancellation(data)
         elif message_type == "goAway":
@@ -2204,10 +2234,21 @@ class GoogleLiveProvider(AIProviderInterface):
                         )
 
                 # Send tool response (camelCase per official API)
-                # Vertex AI doesn't accept "id" field in function responses (AAVA-191)
+                # Older Vertex models reject id (AAVA-191), but 3.8 requires
+                # matching the server's function-call id on both API surfaces.
                 safe_result = self._build_tool_response_payload(func_name, result)
                 use_vertex = getattr(self, '_vertex_active', getattr(self.config, 'use_vertex_ai', False))
-                if use_vertex:
+                is_gemini_3_8 = self._normalize_model_name(self.config.llm_model) == self.GEMINI_3_8_LIVE_MODEL
+                if is_gemini_3_8:
+                    if not safe_result:
+                        safe_result = {"status": "error", "message": "Tool returned no result; do not retry automatically."}
+                    else:
+                        safe_result.setdefault("status", "success")
+                        safe_result.setdefault("message", "Tool completed.")
+                    safe_result.setdefault("retryable", False)
+                    if func_name in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
+                        safe_result["scheduling"] = "WHEN_IDLE"
+                if use_vertex and not is_gemini_3_8:
                     func_response = {
                         "name": func_name,
                         "response": safe_result,
@@ -2304,6 +2345,50 @@ class GoogleLiveProvider(AIProviderInterface):
             ids=ids,
             cancellation_keys=list(cancellation.keys()) if isinstance(cancellation, dict) else None,
         )
+        for tool_call_id in ids or []:
+            task = self._tool_call_tasks.get(tool_call_id)
+            if task and not task.done():
+                tool_name = self._tool_call_names.get(tool_call_id)
+                if tool_call_id in self._active_tool_call_ids and tool_name not in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
+                    # A transfer/disposition may already have changed external
+                    # state. Let its own guarded lifecycle finish; cancelling the
+                    # coroutine here could strand a channel or partial write.
+                    logger.warning("Ignoring cancellation of active call-state tool", call_id=self._call_id, tool_call_id=tool_call_id, function=tool_name)
+                else:
+                    task.cancel()
+
+    def _schedule_3_8_tool_calls(self, data: Dict[str, Any]) -> None:
+        """Keep the receive loop responsive to 3.8 cancellation and audio frames."""
+        for function_call in (data.get("toolCall") or {}).get("functionCalls", []):
+            tool_call_id = function_call.get("id")
+            if not tool_call_id:
+                logger.error("Gemini 3.8 tool call has no id; refusing execution", call_id=self._call_id)
+                continue
+            if tool_call_id in self._tool_call_tasks:
+                logger.warning("Duplicate Gemini 3.8 tool call id ignored", call_id=self._call_id, tool_call_id=tool_call_id)
+                continue
+
+            async def run_tool(call: Dict[str, Any]) -> None:
+                if call.get("name") in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
+                    self._active_tool_call_ids.add(call["id"])
+                    await self._handle_tool_call({"toolCall": {"functionCalls": [call]}})
+                else:
+                    async with self._tool_call_lock:
+                        self._active_tool_call_ids.add(call["id"])
+                        await self._handle_tool_call({"toolCall": {"functionCalls": [call]}})
+
+            task = asyncio.create_task(run_tool(function_call))
+            self._tool_call_tasks[tool_call_id] = task
+            self._tool_call_names[tool_call_id] = function_call.get("name") or ""
+
+            def finish_tool(done: asyncio.Task, call_id: str = tool_call_id) -> None:
+                self._tool_call_tasks.pop(call_id, None)
+                self._active_tool_call_ids.discard(call_id)
+                self._tool_call_names.pop(call_id, None)
+                if not done.cancelled() and done.exception():
+                    logger.error("Gemini 3.8 tool task failed", call_id=self._call_id, tool_call_id=call_id, error=str(done.exception()))
+
+            task.add_done_callback(finish_tool)
 
     def _schedule_forced_farewell_if_needed(self) -> None:
         if self._force_farewell_sent:
@@ -2531,6 +2616,14 @@ class GoogleLiveProvider(AIProviderInterface):
                                  call_id=self._call_id, exc_info=True)
 
             # Cancel background tasks
+            tool_tasks = [task for task in self._tool_call_tasks.values() if task is not asyncio.current_task()]
+            for task in tool_tasks:
+                task.cancel()
+            if tool_tasks:
+                await asyncio.gather(*tool_tasks, return_exceptions=True)
+            self._tool_call_tasks.clear()
+            self._active_tool_call_ids.clear()
+            self._tool_call_names.clear()
             if self._receive_task and not self._receive_task.done():
                 self._receive_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

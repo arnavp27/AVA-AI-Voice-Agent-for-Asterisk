@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gemini 3.8 Live on Developer API and Vertex AI** ([#673](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/673)): adds model selection on both surfaces, AUDIO-only setup, ID-matched function responses, and cancellation-aware tool execution. Read-only extension status checks can run non-blocking; call-state and telephony actions remain blocking. The existing 2.5 default and other providers are unchanged pending live-call qualification.
+
 ## [7.6.1] - 2026-09-20
 
 ### Added

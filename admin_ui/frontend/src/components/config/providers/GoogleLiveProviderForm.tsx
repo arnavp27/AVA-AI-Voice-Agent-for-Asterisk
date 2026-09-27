@@ -9,6 +9,7 @@ import OutputResamplerField from './OutputResamplerField';
 import {
     GOOGLE_LIVE_MODEL_GROUPS,
     GOOGLE_LIVE_SUPPORTED_MODELS,
+    isGoogleLiveModelCompatible,
     normalizeGoogleLiveModelForUi,
 } from '../../../utils/googleLiveModels';
 
@@ -136,8 +137,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
         // Only fire on actual toggles, not on initial mount
         if (prevVertexRef.current !== undefined && prevVertexRef.current !== useVertex) {
             const currentModel = config.llm_model || '';
-            const isModelVertex = currentModel.startsWith('gemini-live-');
-            const mismatch = useVertex ? !isModelVertex : isModelVertex;
+            const mismatch = !isGoogleLiveModelCompatible(currentModel, useVertex);
             if (mismatch) {
                 const newModel = useVertex
                     ? 'gemini-live-2.5-flash-native-audio'
@@ -227,7 +227,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
             setVerifyResult({ status: 'success', message: res.data.message || 'Credentials verified!' });
             // Auto-switch to a Vertex-compatible model on successful verification
             const currentModel = config.llm_model || '';
-            if (!currentModel.startsWith('gemini-live-')) {
+            if (!isGoogleLiveModelCompatible(currentModel, true)) {
                 onChange({ ...config, llm_model: 'gemini-live-2.5-flash-native-audio' });
             }
         } catch (e: any) {
@@ -264,10 +264,11 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                         <>
                                             <strong>API Mode toggle</strong> — choose between Google's two Live API surfaces.
                                             <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                                                <li><strong>Off (Developer API):</strong> <code>generativelanguage.googleapis.com</code> with a simple <code>GOOGLE_API_KEY</code>. Fastest setup; preview models.</li>
-                                                <li><strong>On (Vertex AI):</strong> <code>aiplatform.googleapis.com</code> with OAuth2/ADC via service-account JSON. GA models, enterprise quotas, fixed function-calling reliability.</li>
+                                                <li><strong>Off (Developer API):</strong> <code>generativelanguage.googleapis.com</code> with a <code>GOOGLE_API_KEY</code>.</li>
+                                                <li><strong>On (Vertex AI):</strong> <code>aiplatform.googleapis.com</code> with OAuth2/ADC via service-account JSON.</li>
+                                                <li><code>gemini-3.8-live</code> is available on both surfaces.</li>
                                             </ul>
-                                            Toggling auto-switches the model to the matching API group.
+                                            Toggling preserves models available on both APIs; surface-specific models switch to a compatible default.
                                         </>
                                     }
                                     link="https://ai.google.dev/gemini-api/docs/live"
@@ -276,7 +277,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                             </div>
                             <p className="text-xs text-muted-foreground mt-0.5">
                                 Connects to <code>aiplatform.googleapis.com</code> using OAuth2/ADC instead of an API key.
-                                Enables GA models with fixed function calling reliability.
+                                Supports GA models and enterprise authentication.
                             </p>
                         </div>
                     </div>
@@ -550,8 +551,8 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                         <strong>Gemini Live model</strong> — pricing ~1.5¢/min, sub-second response latency, 24+ language coverage.
                                         <ul className="list-disc pl-4 mt-1 space-y-0.5">
                                             <li><code>gemini-live-2.5-flash-native-audio</code> — Vertex AI GA, recommended for production</li>
-                                            <li><code>gemini-2.5-flash-preview-native-audio-dialog</code> — Developer API preview with native-audio dialog tuning</li>
-                                            <li>Models are scoped to their API group — switching Use Vertex AI auto-swaps to a compatible model</li>
+                                            <li><code>gemini-3.8-live</code> — GA on both APIs; test calls before production use</li>
+                                            <li>Switching Use Vertex AI keeps shared models and auto-swaps incompatible models</li>
                                         </ul>
                                     </>
                                 }
@@ -566,7 +567,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                         >
                             {GOOGLE_LIVE_MODEL_GROUPS.map((group) => {
                                 const isVertexGroup = group.label === 'Vertex AI Live API';
-                                const isActiveGroup = config.use_vertex_ai ? isVertexGroup : !isVertexGroup;
+                                const isActiveGroup = group.label === 'Both Google APIs' || (config.use_vertex_ai ? isVertexGroup : !isVertexGroup);
                                 return (
                                     <optgroup key={group.label} label={group.label}>
                                         {group.options.map((modelOption) => (
@@ -1012,6 +1013,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                                 <li><strong>Audio Only</strong> (default for voice) — TTS is generated server-side</li>
                                                 <li><strong>Text Only</strong> — no TTS; useful for chat-style integrations or external TTS pipelines</li>
                                                 <li><strong>Audio &amp; Text</strong> — both streams; enables real-time transcript display alongside playback</li>
+                                                <li><strong>Gemini 3.8 Live</strong> supports Audio Only; enable output transcription below for text.</li>
                                             </ul>
                                         </>
                                     }

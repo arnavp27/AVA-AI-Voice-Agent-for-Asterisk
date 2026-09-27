@@ -1,6 +1,6 @@
 export const GOOGLE_LIVE_DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-latest';
 
-type GoogleLiveModelGroup = 'Gemini Developer API' | 'Vertex AI Live API';
+type GoogleLiveModelGroup = 'Gemini Developer API' | 'Vertex AI Live API' | 'Both Google APIs';
 
 type GoogleLiveModelOption = {
     value: string;
@@ -13,6 +13,12 @@ type GoogleLiveModelSection = {
 };
 
 export const GOOGLE_LIVE_MODEL_GROUPS: GoogleLiveModelSection[] = [
+    {
+        label: 'Both Google APIs',
+        options: [
+            { value: 'gemini-3.8-live', label: 'Gemini 3.8 Live (GA)' },
+        ],
+    },
     {
         label: 'Gemini Developer API',
         options: [
@@ -36,6 +42,17 @@ export const GOOGLE_LIVE_MODEL_GROUPS: GoogleLiveModelSection[] = [
 
 export const GOOGLE_LIVE_MODEL_OPTIONS = GOOGLE_LIVE_MODEL_GROUPS.flatMap((group) => group.options);
 export const GOOGLE_LIVE_SUPPORTED_MODELS = GOOGLE_LIVE_MODEL_OPTIONS.map((model) => model.value);
+
+export function isGoogleLiveModelCompatible(model: string, useVertex: boolean): boolean {
+    const normalized = normalizeGoogleLiveModelForUi(model);
+    const group = GOOGLE_LIVE_MODEL_GROUPS.find(section =>
+        section.options.some(option => option.value === normalized)
+    );
+    if (group?.label === 'Both Google APIs') return true;
+    if (group) return useVertex ? group.label === 'Vertex AI Live API' : group.label === 'Gemini Developer API';
+    // Retain the prior behavior for custom model names.
+    return useVertex ? normalized.startsWith('gemini-live-') : !normalized.startsWith('gemini-live-');
+}
 
 export const GOOGLE_LIVE_LEGACY_MODEL_MAP: Record<string, string> = {
     'gemini-live-2.5-flash-preview': GOOGLE_LIVE_DEFAULT_MODEL,
