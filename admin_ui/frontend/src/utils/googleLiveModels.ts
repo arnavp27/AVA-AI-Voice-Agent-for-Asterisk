@@ -43,24 +43,63 @@ export const GOOGLE_LIVE_MODEL_GROUPS: GoogleLiveModelSection[] = [
 export const GOOGLE_LIVE_MODEL_OPTIONS = GOOGLE_LIVE_MODEL_GROUPS.flatMap((group) => group.options);
 export const GOOGLE_LIVE_SUPPORTED_MODELS = GOOGLE_LIVE_MODEL_OPTIONS.map((model) => model.value);
 
-// https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live
-// Model availability is distinct from the generic Vertex endpoint region list.
-export const GEMINI_3_8_LIVE_VERTEX_REGIONS = ['us-central1', 'us', 'eu'] as const;
+// Keep all locations used by the supported Live model catalog visible. The
+// model-specific support check below disables the locations a model cannot use.
+export const GOOGLE_LIVE_VERTEX_REGIONS = [
+    { value: 'us', label: 'US (multi-region)' },
+    { value: 'eu', label: 'EU (multi-region)' },
+    { value: 'us-central1', label: 'US Central (Iowa)' },
+    { value: 'us-east1', label: 'US East (South Carolina)' },
+    { value: 'us-east4', label: 'US East (Northern Virginia)' },
+    { value: 'us-east5', label: 'US East (Ohio)' },
+    { value: 'us-south1', label: 'US South (Texas)' },
+    { value: 'us-west1', label: 'US West (Oregon)' },
+    { value: 'us-west4', label: 'US West (Las Vegas)' },
+    { value: 'europe-central2', label: 'Europe Central (Warsaw)' },
+    { value: 'europe-north1', label: 'Europe North (Finland)' },
+    { value: 'europe-southwest1', label: 'Europe Southwest (Madrid)' },
+    { value: 'europe-west1', label: 'Europe West (Belgium)' },
+    { value: 'europe-west2', label: 'Europe West (London)' },
+    { value: 'europe-west3', label: 'Europe West (Frankfurt)' },
+    { value: 'europe-west4', label: 'Europe West (Netherlands)' },
+    { value: 'europe-west8', label: 'Europe West (Milan)' },
+    { value: 'asia-east1', label: 'Asia East (Taiwan)' },
+    { value: 'asia-northeast1', label: 'Asia Northeast (Tokyo)' },
+    { value: 'asia-southeast1', label: 'Asia Southeast (Singapore)' },
+    { value: 'australia-southeast1', label: 'Australia (Sydney)' },
+] as const;
 
-export function getGemini38LiveVertexRegionSupport(
+// Model references:
+// https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live
+// https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-live-api
+export const GOOGLE_LIVE_VERTEX_MODEL_REGIONS: Record<string, readonly string[]> = {
+    'gemini-3.8-live': ['us-central1', 'us', 'eu'],
+    'gemini-live-2.5-flash-native-audio': [
+        'us-central1', 'us-east1', 'us-east4', 'us-east5', 'us-south1', 'us-west1', 'us-west4',
+        'europe-central2', 'europe-north1', 'europe-southwest1', 'europe-west1', 'europe-west4', 'europe-west8',
+    ],
+};
+
+export function getGoogleLiveVertexRegionSupport(
     model: unknown,
     useVertex: boolean,
     region: unknown,
-): 'supported' | 'unsupported' | 'unsupported-endpoint' | null {
-    if (!useVertex || normalizeGoogleLiveModelForUi(model) !== 'gemini-3.8-live') return null;
+): 'supported' | 'unsupported' | 'unknown' | null {
+    if (!useVertex) return null;
+    const normalizedModel = normalizeGoogleLiveModelForUi(model);
+    const supportedRegions = Object.prototype.hasOwnProperty.call(GOOGLE_LIVE_VERTEX_MODEL_REGIONS, normalizedModel)
+        ? GOOGLE_LIVE_VERTEX_MODEL_REGIONS[normalizedModel]
+        : undefined;
+    if (!supportedRegions) return 'unknown';
     const selectedRegion = typeof region === 'string' && region.trim() ? region.trim() : 'us-central1';
-    if (selectedRegion === 'us-central1') return 'supported';
-    // The app currently constructs a regional `${location}-aiplatform.googleapis.com`
-    // WebSocket host. Google's us/eu multi-regions use different endpoint hosts.
-    if (GEMINI_3_8_LIVE_VERTEX_REGIONS.some(supported => supported === selectedRegion)) {
-        return 'unsupported-endpoint';
-    }
-    return 'unsupported';
+    return supportedRegions.includes(selectedRegion) ? 'supported' : 'unsupported';
+}
+
+export function preferredGoogleLiveVertexRegion(model: unknown, currentRegion: unknown): string {
+    const selectedRegion = typeof currentRegion === 'string' && currentRegion.trim() ? currentRegion.trim() : 'us-central1';
+    return getGoogleLiveVertexRegionSupport(model, true, selectedRegion) === 'unsupported'
+        ? 'us-central1'
+        : selectedRegion;
 }
 
 export function isGoogleLiveModelCompatible(model: string, useVertex: boolean): boolean {
@@ -88,7 +127,7 @@ export function normalizeGoogleLiveModelForUi(model: unknown): string {
         return GOOGLE_LIVE_DEFAULT_MODEL;
     }
 
-    if (raw in GOOGLE_LIVE_LEGACY_MODEL_MAP) {
+    if (Object.prototype.hasOwnProperty.call(GOOGLE_LIVE_LEGACY_MODEL_MAP, raw)) {
         return GOOGLE_LIVE_LEGACY_MODEL_MAP[raw];
     }
 

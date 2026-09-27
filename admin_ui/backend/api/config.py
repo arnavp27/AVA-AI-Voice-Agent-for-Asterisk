@@ -3703,15 +3703,23 @@ async def verify_provider_credentials(provider_key: str):
         raise HTTPException(status_code=400, detail=f"Verification failed: {exc}")
     raise HTTPException(status_code=400, detail=f"Unsupported provider type '{kind}'")
 VERTEX_REGIONS = [
+    {"value": "us", "label": "US (multi-region)"},
+    {"value": "eu", "label": "EU (multi-region)"},
     {"value": "us-central1", "label": "US Central (Iowa)"},
     {"value": "us-east1", "label": "US East (South Carolina)"},
     {"value": "us-east4", "label": "US East (Northern Virginia)"},
+    {"value": "us-east5", "label": "US East (Ohio)"},
+    {"value": "us-south1", "label": "US South (Texas)"},
     {"value": "us-west1", "label": "US West (Oregon)"},
     {"value": "us-west4", "label": "US West (Las Vegas)"},
+    {"value": "europe-central2", "label": "Europe Central (Warsaw)"},
+    {"value": "europe-north1", "label": "Europe North (Finland)"},
+    {"value": "europe-southwest1", "label": "Europe Southwest (Madrid)"},
     {"value": "europe-west1", "label": "Europe West (Belgium)"},
     {"value": "europe-west2", "label": "Europe West (London)"},
     {"value": "europe-west3", "label": "Europe West (Frankfurt)"},
     {"value": "europe-west4", "label": "Europe West (Netherlands)"},
+    {"value": "europe-west8", "label": "Europe West (Milan)"},
     {"value": "asia-east1", "label": "Asia East (Taiwan)"},
     {"value": "asia-northeast1", "label": "Asia Northeast (Tokyo)"},
     {"value": "asia-southeast1", "label": "Asia Southeast (Singapore)"},

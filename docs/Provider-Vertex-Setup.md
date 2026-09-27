@@ -7,8 +7,8 @@ The `google_live` provider can connect via **two authentication modes**:
 | Feature | Developer API (default) | Vertex AI |
 |---------|------------------------|-----------|
 | **Auth** | API key (`GOOGLE_API_KEY`) | OAuth2 service account JSON |
-| **Endpoint** | `generativelanguage.googleapis.com` | `{location}-aiplatform.googleapis.com` |
-| **Models** | Preview (`*-preview-*`) | GA (`gemini-live-2.5-flash-native-audio`) |
+| **Endpoint** | `generativelanguage.googleapis.com` | Regional `{location}-aiplatform.googleapis.com` or US/EU multi-region host |
+| **Models** | Developer API Live models | Vertex AI Live models, including `gemini-3.8-live` and `gemini-live-2.5-flash-native-audio` |
 | **Function calling** | 1008 bug (~1 in 5–10 calls) | Fixed in GA model |
 | **Enterprise** | No SLA | SLA, VPC-SC, audit logging |
 
@@ -140,23 +140,14 @@ Look for a log line confirming the Vertex AI endpoint is active. If ADC (Applica
 
 ## Available Regions
 
-| Region | Location |
-|--------|----------|
-| `us-central1` | Iowa (default) |
-| `us-east1` | South Carolina |
-| `us-east4` | Northern Virginia |
-| `us-west1` | Oregon |
-| `us-west4` | Las Vegas |
-| `europe-west1` | Belgium |
-| `europe-west2` | London |
-| `europe-west3` | Frankfurt |
-| `europe-west4` | Netherlands |
-| `asia-east1` | Taiwan |
-| `asia-northeast1` | Tokyo |
-| `asia-southeast1` | Singapore |
-| `australia-southeast1` | Sydney |
+Region availability depends on the Live model. The Admin UI shows its Vertex region catalog, disables locations not listed for the selected GA model, and selects `us-central1` when switching models would leave an unsupported region. A saved unsupported choice is flagged until changed. `us-central1` is listed for both GA models and is the shared default.
 
-Set `vertex_location` to the region closest to your Asterisk server for lowest latency.
+| Live model | Published Vertex locations |
+|------------|----------------------------|
+| [`gemini-3.8-live`](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-live) | `us-central1`, `us`, `eu` |
+| [`gemini-live-2.5-flash-native-audio`](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-live-api) | `us-central1`, `us-east1`, `us-east4`, `us-east5`, `us-south1`, `us-west1`, `us-west4`, `europe-central2`, `europe-north1`, `europe-southwest1`, `europe-west1`, `europe-west4`, `europe-west8` |
+
+The `us` and `eu` values use Google's [multi-region endpoints](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations), not regional hostnames. For legacy preview or custom models, the UI leaves the region selectable and marks availability unverified. Choose the closest *supported* location for lower latency; project access and session behavior still require a live test.
 
 ## Troubleshooting
 

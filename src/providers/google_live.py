@@ -64,6 +64,15 @@ from src.tools.execution_history import record_in_call_tool_result
 logger = get_logger(__name__)
 
 
+def build_vertex_live_websocket_url(location: str) -> str:
+    """Select Google's regional or jurisdictional multi-region Live host."""
+    if location in ("us", "eu"):
+        host = f"aiplatform.{location}.rep.googleapis.com"
+    else:
+        host = f"{location}-aiplatform.googleapis.com"
+    return f"wss://{host}/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent"
+
+
 def _merge_transcription_fragment(buffer: str, fragment: str, last_fragment: str) -> Tuple[str, str]:
     """
     Merge a transcription fragment into an existing buffer.
@@ -856,10 +865,7 @@ class GoogleLiveProvider(AIProviderInterface):
                 self._vertex_active = True  # persist for downstream methods
                 ws_extra_headers = {"Authorization": f"Bearer {bearer_token}"}
 
-                vertex_endpoint = (
-                    f"wss://{vertex_location}-aiplatform.googleapis.com"
-                    f"/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent"
-                )
+                vertex_endpoint = build_vertex_live_websocket_url(vertex_location)
                 ws_url = vertex_endpoint
 
                 logger.info(
