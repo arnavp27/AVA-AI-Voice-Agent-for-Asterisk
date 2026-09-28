@@ -58,6 +58,7 @@ from src.tools.adapters.sanitize import sanitize_tool_result_for_json_string
 
 # Tool calling support
 from src.tools.registry import tool_registry
+from src.tools.base import ToolExecutionBehavior, ToolResponseScheduling
 from src.tools.adapters.google import GoogleToolAdapter
 from src.tools.execution_history import record_in_call_tool_result
 
@@ -171,6 +172,7 @@ class GoogleLiveProvider(AIProviderInterface):
     DEFAULT_LIVE_MODEL = "gemini-2.5-flash-native-audio-latest"
     GEMINI_3_8_LIVE_MODEL = "gemini-3.8-live"
     GEMINI_3_8_NON_BLOCKING_TOOLS = frozenset({"check_extension_status"})
+    TOOL_DRAIN_GRACE_SEC = 2.0
     LEGACY_LIVE_MODEL_MAP = {
         # Older preview aliases that are no longer preferred.
         "gemini-live-2.5-flash-preview": DEFAULT_LIVE_MODEL,
@@ -182,6 +184,23 @@ class GoogleLiveProvider(AIProviderInterface):
             self._normalize_model_name(self.config.llm_model) == self.GEMINI_3_8_LIVE_MODEL
             and getattr(self.config, "full_duplex_barge_in_3_8", True)
         )
+
+    def _tool_policy(self, tool_name: str) -> tuple[ToolExecutionBehavior, ToolResponseScheduling]:
+        """Resolve shared tool metadata, failing closed for unregistered tools."""
+        registered = self._tool_adapter.registry.get(tool_name) if self._tool_adapter else None
+        if registered is not None:
+            definition = registered.definition
+            try:
+                behavior = ToolExecutionBehavior(definition.execution_behavior)
+                scheduling = ToolResponseScheduling(definition.response_scheduling)
+                return behavior, scheduling
+            except (AttributeError, ValueError):
+                return ToolExecutionBehavior.BLOCKING, ToolResponseScheduling.WHEN_IDLE
+        # The built-in status lookup is safe before registry initialization.
+        # Every other unresolved name stays BLOCKING.
+        if tool_name in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
+            return ToolExecutionBehavior.NON_BLOCKING, ToolResponseScheduling.WHEN_IDLE
+        return ToolExecutionBehavior.BLOCKING, ToolResponseScheduling.WHEN_IDLE
 
     def __init__(
         self,
@@ -200,9 +219,12 @@ class GoogleLiveProvider(AIProviderInterface):
         self._receive_task: Optional[asyncio.Task] = None
         self._keepalive_task: Optional[asyncio.Task] = None
         self._tool_call_tasks: Dict[str, asyncio.Task] = {}
+        self._seen_tool_call_ids: set[str] = set()
+        self._detached_tool_tasks: set[asyncio.Task] = set()
         self._active_tool_call_ids: set[str] = set()
         self._tool_call_names: Dict[str, str] = {}
         self._tool_call_lock = asyncio.Lock()
+        self._tool_teardown_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
         self._gating_manager = gating_manager
 
@@ -780,6 +802,7 @@ class GoogleLiveProvider(AIProviderInterface):
         self._call_id = call_id
         self._closing = False
         self._closed = False
+        self._seen_tool_call_ids.clear()
         self._session_start_time = time.time()
         self._setup_complete = False
         self._greeting_completed = False
@@ -1059,14 +1082,12 @@ class GoogleLiveProvider(AIProviderInterface):
                 # Use format_tools() with filtered tool list from context
                 tools = self._tool_adapter.format_tools(tool_names)
                 if is_gemini_3_8:
-                    # Only the read-only extension availability lookup is safe to
-                    # run concurrently. Call-state and telephony actions must block.
+                    # Shared tool metadata is fail-closed to BLOCKING. Currently
+                    # only read-only extension status explicitly opts in.
                     for tool in tools:
                         for declaration in tool.get("functionDeclarations", []):
-                            declaration["behavior"] = (
-                                "NON_BLOCKING" if declaration.get("name") in self.GEMINI_3_8_NON_BLOCKING_TOOLS
-                                else "BLOCKING"
-                            )
+                            behavior, _ = self._tool_policy(declaration.get("name") or "")
+                            declaration["behavior"] = behavior.value
                 if tools:
                     tool_count = len(tools[0].get("functionDeclarations", [])) if tools else 0
                     logger.debug(
@@ -1522,13 +1543,7 @@ class GoogleLiveProvider(AIProviderInterface):
                 exc_info=True,
             )
         finally:
-            # A closed socket must not leave call-state actions running without
-            # a channel to return their results (including unexpected closes).
-            if self._tool_call_tasks:
-                tasks = list(self._tool_call_tasks.values())
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+            await self._drain_tool_calls(reason="websocket_closed")
 
     async def _handle_server_message(self, data: Dict[str, Any]) -> None:
         """Handle incoming message from Gemini Live API."""
@@ -2143,6 +2158,9 @@ class GoogleLiveProvider(AIProviderInterface):
 
     async def _handle_tool_call(self, data: Dict[str, Any]) -> None:
         """Handle toolCall message."""
+        owner_call_id = self._call_id
+        if self._closing or self._closed or not owner_call_id:
+            return
         tool_call = data.get("toolCall", {})
         func_name = None
         func_args: Dict[str, Any] = {}
@@ -2186,7 +2204,7 @@ class GoogleLiveProvider(AIProviderInterface):
                 # Build tool execution context
                 from src.tools.context import ToolExecutionContext
                 tool_context = ToolExecutionContext(
-                    call_id=self._call_id,
+                    call_id=owner_call_id,
                     caller_channel_id=getattr(self, '_caller_channel_id', None),
                     bridge_id=getattr(self, '_bridge_id', None),
                     caller_number=getattr(self, '_caller_number', None),
@@ -2209,6 +2227,13 @@ class GoogleLiveProvider(AIProviderInterface):
                         "message": f"Tool '{func_name}' not allowed for this call",
                     }
                 else:
+                    if self._closing or self._closed or self._call_id != owner_call_id:
+                        return
+                    # Protect only a tool that has entered actual execution.
+                    # A task still checking allowlists is safe to cancel during
+                    # teardown; it must not begin a transfer after shutdown.
+                    if call_id is not None:
+                        self._active_tool_call_ids.add(call_id)
                     result = await self._tool_adapter.execute_tool(
                         func_name,
                         func_args,
@@ -2217,7 +2242,7 @@ class GoogleLiveProvider(AIProviderInterface):
 
                 await record_in_call_tool_result(
                     session_store=getattr(self, "_session_store", None),
-                    call_id=self._call_id,
+                    call_id=owner_call_id,
                     tool_call_id=call_id,
                     tool_name=func_name,
                     canonical_name=tool_registry.canonicalize_tool_name(func_name),
@@ -2226,6 +2251,11 @@ class GoogleLiveProvider(AIProviderInterface):
                     duration_ms=(time.time() - tool_started_at) * 1000,
                 )
                 tool_result_recorded = True
+
+                # An active call-state action may finish after WebSocket teardown.
+                # Keep its result in call history, but never reply into a stale session.
+                if self._closing or self._closed or self._call_id != owner_call_id:
+                    return
 
                 # Check for hangup intent (like OpenAI Realtime pattern)
                 if func_name == "hangup_call" and result:
@@ -2259,8 +2289,9 @@ class GoogleLiveProvider(AIProviderInterface):
                         safe_result.setdefault("status", "success")
                         safe_result.setdefault("message", "Tool completed.")
                     safe_result.setdefault("retryable", False)
-                    if func_name in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
-                        safe_result["scheduling"] = "WHEN_IDLE"
+                    behavior, scheduling = self._tool_policy(func_name or "")
+                    if behavior == ToolExecutionBehavior.NON_BLOCKING:
+                        safe_result["scheduling"] = scheduling.value
                 if use_vertex and not is_gemini_3_8:
                     func_response = {
                         "name": func_name,
@@ -2277,7 +2308,13 @@ class GoogleLiveProvider(AIProviderInterface):
                         "functionResponses": [func_response]
                     }
                 }
-                await self._send_message(tool_response)
+                if not await self._send_message(tool_response):
+                    logger.warning(
+                        "Google Live tool response not sent after session closed",
+                        call_id=owner_call_id,
+                        function=func_name,
+                    )
+                    return
 
                 logger.info(
                     "Sent Google Live tool response",
@@ -2315,7 +2352,7 @@ class GoogleLiveProvider(AIProviderInterface):
             if func_name and not tool_result_recorded:
                 await record_in_call_tool_result(
                     session_store=getattr(self, "_session_store", None),
-                    call_id=self._call_id,
+                    call_id=owner_call_id,
                     tool_call_id=call_id,
                     tool_name=func_name,
                     canonical_name=tool_registry.canonicalize_tool_name(func_name),
@@ -2334,7 +2371,7 @@ class GoogleLiveProvider(AIProviderInterface):
             if func_name and not tool_result_recorded:
                 await record_in_call_tool_result(
                     session_store=getattr(self, "_session_store", None),
-                    call_id=self._call_id,
+                    call_id=owner_call_id,
                     tool_call_id=call_id,
                     tool_name=func_name,
                     canonical_name=tool_registry.canonicalize_tool_name(func_name),
@@ -2362,7 +2399,8 @@ class GoogleLiveProvider(AIProviderInterface):
             task = self._tool_call_tasks.get(tool_call_id)
             if task and not task.done():
                 tool_name = self._tool_call_names.get(tool_call_id)
-                if tool_call_id in self._active_tool_call_ids and tool_name not in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
+                behavior, _ = self._tool_policy(tool_name or "")
+                if tool_call_id in self._active_tool_call_ids and behavior == ToolExecutionBehavior.BLOCKING:
                     # A transfer/disposition may already have changed external
                     # state. Let its own guarded lifecycle finish; cancelling the
                     # coroutine here could strand a channel or partial write.
@@ -2372,34 +2410,44 @@ class GoogleLiveProvider(AIProviderInterface):
 
     def _schedule_3_8_tool_calls(self, data: Dict[str, Any]) -> None:
         """Keep the receive loop responsive to 3.8 cancellation and audio frames."""
+        if self._closing or self._closed:
+            return
         for function_call in (data.get("toolCall") or {}).get("functionCalls", []):
             tool_call_id = function_call.get("id")
             if not tool_call_id:
                 logger.error("Gemini 3.8 tool call has no id; refusing execution", call_id=self._call_id)
                 continue
-            if tool_call_id in self._tool_call_tasks:
+            if tool_call_id in self._seen_tool_call_ids:
                 logger.warning("Duplicate Gemini 3.8 tool call id ignored", call_id=self._call_id, tool_call_id=tool_call_id)
                 continue
+            self._seen_tool_call_ids.add(tool_call_id)
 
             async def run_tool(call: Dict[str, Any]) -> None:
-                if call.get("name") in self.GEMINI_3_8_NON_BLOCKING_TOOLS:
-                    self._active_tool_call_ids.add(call["id"])
+                behavior, _ = self._tool_policy(call.get("name") or "")
+                if behavior == ToolExecutionBehavior.NON_BLOCKING:
+                    if self._closing or self._closed:
+                        return
                     await self._handle_tool_call({"toolCall": {"functionCalls": [call]}})
                 else:
                     async with self._tool_call_lock:
-                        self._active_tool_call_ids.add(call["id"])
+                        if self._closing or self._closed:
+                            return
                         await self._handle_tool_call({"toolCall": {"functionCalls": [call]}})
 
             task = asyncio.create_task(run_tool(function_call))
             self._tool_call_tasks[tool_call_id] = task
             self._tool_call_names[tool_call_id] = function_call.get("name") or ""
 
+            owner_call_id = self._call_id
+
             def finish_tool(done: asyncio.Task, call_id: str = tool_call_id) -> None:
-                self._tool_call_tasks.pop(call_id, None)
-                self._active_tool_call_ids.discard(call_id)
-                self._tool_call_names.pop(call_id, None)
+                if self._tool_call_tasks.get(call_id) is done:
+                    self._tool_call_tasks.pop(call_id, None)
+                    self._active_tool_call_ids.discard(call_id)
+                    self._tool_call_names.pop(call_id, None)
+                self._detached_tool_tasks.discard(done)
                 if not done.cancelled() and done.exception():
-                    logger.error("Gemini 3.8 tool task failed", call_id=self._call_id, tool_call_id=call_id, error=str(done.exception()))
+                    logger.error("Gemini 3.8 tool task failed", call_id=owner_call_id, tool_call_id=call_id, error=str(done.exception()))
 
             task.add_done_callback(finish_tool)
 
@@ -2601,6 +2649,41 @@ class GoogleLiveProvider(AIProviderInterface):
             call_id=self._call_id,
         )
 
+    async def _drain_tool_calls(self, *, reason: str) -> None:
+        """Cancel safe/queued work; let active call-state actions finish safely."""
+        async with self._tool_teardown_lock:
+            current = asyncio.current_task()
+            entries = [(call_id, task) for call_id, task in self._tool_call_tasks.items()
+                       if task is not current and not task.done()]
+            if not entries:
+                return
+            protected = []
+            for call_id, task in entries:
+                behavior, _ = self._tool_policy(self._tool_call_names.get(call_id, ""))
+                if call_id in self._active_tool_call_ids and behavior == ToolExecutionBehavior.BLOCKING:
+                    protected.append((call_id, task))
+                else:
+                    task.cancel()
+
+            pending = {task for _, task in entries}
+            _, pending = await asyncio.wait(pending, timeout=self.TOOL_DRAIN_GRACE_SEC)
+            for call_id, task in entries:
+                if self._tool_call_tasks.get(call_id) is task:
+                    self._tool_call_tasks.pop(call_id, None)
+                self._active_tool_call_ids.discard(call_id)
+                self._tool_call_names.pop(call_id, None)
+                if task in pending:
+                    self._detached_tool_tasks.add(task)
+                    task.add_done_callback(self._detached_tool_tasks.discard)
+            if pending:
+                logger.warning(
+                    "Google Live tool tasks outlived teardown grace",
+                    call_id=self._call_id,
+                    reason=reason,
+                    pending=len(pending),
+                    protected=sum(task in pending for _, task in protected),
+                )
+
     async def stop_session(self) -> None:
         """Stop the Google Live session and cleanup resources."""
         if self._closing or self._closed:
@@ -2629,14 +2712,7 @@ class GoogleLiveProvider(AIProviderInterface):
                                  call_id=self._call_id, exc_info=True)
 
             # Cancel background tasks
-            tool_tasks = [task for task in self._tool_call_tasks.values() if task is not asyncio.current_task()]
-            for task in tool_tasks:
-                task.cancel()
-            if tool_tasks:
-                await asyncio.gather(*tool_tasks, return_exceptions=True)
-            self._tool_call_tasks.clear()
-            self._active_tool_call_ids.clear()
-            self._tool_call_names.clear()
+            await self._drain_tool_calls(reason="stop_session")
             if self._receive_task and not self._receive_task.done():
                 self._receive_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

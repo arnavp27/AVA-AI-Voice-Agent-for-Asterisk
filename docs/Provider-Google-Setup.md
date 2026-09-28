@@ -356,9 +356,12 @@ Google publishes Gemini Live models on two surfaces with different lifecycles. P
 **Recommendation:**
 - **Production voice agents** → use **Vertex AI mode** (`use_vertex_ai: true`) with `gemini-live-2.5-flash-native-audio` until 3.8 is qualified with AAVA test calls. This is the path where server-side barge-in (`serverContent.interrupted`) has been empirically reliable. See the **Barge-In (Interruption)** section below and [Provider-Vertex-Setup.md](Provider-Vertex-Setup.md).
 - **Evaluating Gemini 3.8 Live** → select `gemini-3.8-live` with either API mode. It is [GA on Vertex AI](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/live-api) and [available on the Developer API](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live). Google defaults its function calls to non-blocking; AAVA keeps call-control tools blocking and allows only read-only extension status checks to run asynchronously. Test greeting, transcription, interruption, tools, transfer, and farewell before production use; the existing 2.5 default is unchanged.
+
 - **Developer API evaluation / non-prod** → the shipped `gemini-2.5-flash-native-audio-latest` works for basic conversation flow but server-side barge-in is unreliable. Acceptable for demos and feature evaluation; not recommended for production telephony where mid-utterance interruption matters.
 - **Pinned snapshot for reproducibility** → use `gemini-2.5-flash-native-audio-preview-12-2025` (or dated `-09-2025`) instead of the floating `-latest` alias.
 - **Evaluating Gemini 3.1** → swap to `gemini-3.1-flash-live-preview` in a non-prod context first; tool-calling and barge-in parity not yet validated for AAVA — report back via Discord/issues.
+
+Gemini 3.8 Live tool declarations use an explicit execution policy. New tools default to `BLOCKING`; `check_extension_status` is `NON_BLOCKING` with `WHEN_IDLE` result scheduling. Calls are tracked by Google's function-call ID, duplicate IDs are ignored, and cancellations stop queued or read-only work. If a transfer or other state-changing action is already running, AAVA lets it finish rather than canceling halfway through; after a disconnect it records the outcome without sending a result into a closed session. Other Google Live models retain their existing tool protocol.
 
 > Older Live models (`gemini-2.0-flash-live-001-preview-*`) are no longer listed on Google's models page and should not be used for new deployments.
 

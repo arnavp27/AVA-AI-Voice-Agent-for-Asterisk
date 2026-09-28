@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 import structlog
 
-from src.tools.base import Tool, ToolDefinition, ToolParameter, ToolCategory, ToolPhase
+from src.tools.base import Tool, ToolDefinition, ToolParameter, ToolCategory, ToolPhase, ToolExecutionBehavior
 from src.tools.context import ToolExecutionContext
 
 logger = structlog.get_logger(__name__)
@@ -469,6 +469,7 @@ class CheckExtensionStatusTool(Tool):
             is_global=False,
             requires_channel=False,
             max_execution_time=10,
+            execution_behavior=ToolExecutionBehavior.NON_BLOCKING,
             parameters=[
                 ToolParameter(
                     name="extension",

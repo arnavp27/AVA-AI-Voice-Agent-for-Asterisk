@@ -1,12 +1,18 @@
 """Model-specific Gemini 3.8 Live protocol and lifecycle regressions."""
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from src.config import GoogleProviderConfig
 from src.providers.google_live import GoogleLiveProvider
 from src.tools.context import ToolExecutionContext
+from src.tools.base import (
+    ToolCategory, ToolDefinition, ToolExecutionBehavior, ToolResponseScheduling,
+)
+from src.tools.telephony.check_extension_status import CheckExtensionStatusTool
 
 
 @pytest.mark.parametrize("model,enabled,expected", [
@@ -21,6 +27,42 @@ def test_full_duplex_barge_in_is_3_8_only_and_can_be_rolled_back(model, enabled,
         on_event=lambda event: None,
     )
     assert provider.uses_full_duplex_barge_in() is expected
+
+
+def test_tool_policy_defaults_blocking_and_status_check_is_explicitly_non_blocking():
+    assert ToolDefinition(name="write_record", description="", category=ToolCategory.BUSINESS).execution_behavior == ToolExecutionBehavior.BLOCKING
+    assert CheckExtensionStatusTool().definition.execution_behavior == ToolExecutionBehavior.NON_BLOCKING
+
+
+@pytest.mark.asyncio
+async def test_3_8_uses_shared_tool_policy_for_declaration_and_result(monkeypatch):
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model="gemini-3.8-live"),
+        on_event=lambda event: None,
+    )
+    provider._call_id = "call-policy"
+    definition = ToolDefinition(
+        name="readonly_lookup", description="", category=ToolCategory.BUSINESS,
+        execution_behavior=ToolExecutionBehavior.NON_BLOCKING,
+        response_scheduling=ToolResponseScheduling.SILENT,
+    )
+    monkeypatch.setattr(provider._tool_adapter.registry, "get", lambda name: SimpleNamespace(definition=definition) if name == "readonly_lookup" else None)
+    monkeypatch.setattr(provider._tool_adapter, "format_tools", lambda names: [{"functionDeclarations": [{"name": "readonly_lookup"}]}])
+    sent = []
+
+    async def capture(payload):
+        sent.append(payload)
+        return True
+
+    monkeypatch.setattr(provider, "_send_message", capture)
+    await provider._send_setup({"tools": ["readonly_lookup"]})
+    assert sent[0]["setup"]["tools"][0]["functionDeclarations"][0]["behavior"] == "NON_BLOCKING"
+
+    monkeypatch.setattr(ToolExecutionContext, "get_tool_block_response", AsyncMock(return_value={"status": "success"}))
+    await provider._handle_tool_call({"toolCall": {"functionCalls": [
+        {"id": "fc-policy", "name": "readonly_lookup", "args": {}}
+    ]}})
+    assert sent[-1]["toolResponse"]["functionResponses"][0]["response"]["scheduling"] == "SILENT"
 
 
 @pytest.mark.asyncio
@@ -130,6 +172,7 @@ async def test_3_8_does_not_cancel_active_call_state_tool_mid_action(monkeypatch
     completed = asyncio.Event()
 
     async def running_tool(data):
+        provider._active_tool_call_ids.add("fc-1")
         started.set()
         await release.wait()
         completed.set()
@@ -146,3 +189,113 @@ async def test_3_8_does_not_cancel_active_call_state_tool_mid_action(monkeypatch
     await asyncio.wait_for(completed.wait(), 1)
     await asyncio.sleep(0)
     assert provider._tool_call_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_3_8_cancellation_skips_queued_blocking_tool_and_duplicate_id(monkeypatch):
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model="gemini-3.8-live"),
+        on_event=lambda event: None,
+    )
+    provider._call_id = "call-queued"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    executed = []
+
+    async def run_tool(data):
+        call_id = data["toolCall"]["functionCalls"][0]["id"]
+        executed.append(call_id)
+        if call_id == "fc-first":
+            started.set()
+            await release.wait()
+
+    monkeypatch.setattr(provider, "_handle_tool_call", run_tool)
+    await provider._handle_server_message({"toolCall": {"functionCalls": [
+        {"id": "fc-first", "name": "attended_transfer", "args": {}},
+        {"id": "fc-second", "name": "hangup_call", "args": {}},
+    ]}})
+    await asyncio.wait_for(started.wait(), 1)
+    await provider._handle_server_message({"toolCallCancellation": {"ids": ["fc-second"]}})
+    release.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert executed == ["fc-first"]
+    await provider._handle_server_message({"toolCall": {"functionCalls": [
+        {"id": "fc-first", "name": "attended_transfer", "args": {}}
+    ]}})
+    await asyncio.sleep(0)
+    assert executed == ["fc-first"]
+
+
+@pytest.mark.asyncio
+async def test_3_8_teardown_preserves_active_mutation_and_suppresses_late_reply(monkeypatch):
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model="gemini-3.8-live"),
+        on_event=lambda event: None,
+    )
+    provider._call_id = "call-state"
+    provider._allowed_tools = ["attended_transfer"]
+    provider.TOOL_DRAIN_GRACE_SEC = 0.01
+    started = asyncio.Event()
+    release = asyncio.Event()
+    cancelled = asyncio.Event()
+    sent = AsyncMock(return_value=True)
+    recorded = AsyncMock()
+
+    async def execute(_name, _args, _context):
+        started.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return {"status": "success"}
+
+    monkeypatch.setattr(provider._tool_adapter, "execute_tool", execute)
+    monkeypatch.setattr(ToolExecutionContext, "get_tool_block_response", AsyncMock(return_value=None))
+    monkeypatch.setattr(provider, "_send_message", sent)
+    monkeypatch.setattr("src.providers.google_live.record_in_call_tool_result", recorded)
+    await provider._handle_server_message({"toolCall": {"functionCalls": [
+        {"id": "fc-transfer", "name": "attended_transfer", "args": {}}
+    ]}})
+    await asyncio.wait_for(started.wait(), 1)
+    await provider.stop_session()
+    assert not cancelled.is_set()
+    assert provider._call_id is None
+    assert len(provider._detached_tool_tasks) == 1
+    release.set()
+    await asyncio.wait_for(next(iter(provider._detached_tool_tasks)), 1)
+    await asyncio.sleep(0)
+    assert recorded.await_args.kwargs["call_id"] == "call-state"
+    sent.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_3_8_teardown_cancels_tool_before_mutation_starts(monkeypatch):
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model="gemini-3.8-live"),
+        on_event=lambda event: None,
+    )
+    provider._call_id = "call-before-execution"
+    provider._allowed_tools = ["attended_transfer"]
+    checking = asyncio.Event()
+    cancelled = asyncio.Event()
+    execute = AsyncMock(return_value={"status": "success"})
+
+    async def slow_guard(_self, _name):
+        checking.set()
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(ToolExecutionContext, "get_tool_block_response", slow_guard)
+    monkeypatch.setattr(provider._tool_adapter, "execute_tool", execute)
+    await provider._handle_server_message({"toolCall": {"functionCalls": [
+        {"id": "fc-transfer", "name": "attended_transfer", "args": {}}
+    ]}})
+    await asyncio.wait_for(checking.wait(), 1)
+    await provider.stop_session()
+    assert cancelled.is_set()
+    execute.assert_not_awaited()
