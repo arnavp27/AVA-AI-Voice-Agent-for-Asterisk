@@ -35,6 +35,57 @@ def test_tool_policy_defaults_blocking_and_status_check_is_explicitly_non_blocki
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model,use_vertex,audio_active,expect_prompt", [
+    ("gemini-3.8-live", True, True, False),
+    ("gemini-3.8-live", False, True, False),
+    ("gemini-3.8-live", True, False, True),
+    ("gemini-live-2.5-flash-native-audio", True, True, True),
+])
+async def test_hangup_tool_preserves_active_3_8_farewell_without_changing_legacy_prompt(
+    monkeypatch, model, use_vertex, audio_active, expect_prompt,
+):
+    events = AsyncMock()
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model=model, use_vertex_ai=use_vertex),
+        on_event=events,
+    )
+    provider._call_id = "call-farewell"
+    provider._allowed_tools = ["hangup_call"]
+    provider._in_audio_burst = audio_active
+    provider._turn_has_assistant_output = audio_active
+    sent = []
+
+    async def capture(payload):
+        sent.append(payload)
+        return True
+
+    monkeypatch.setattr(provider, "_send_message", capture)
+    monkeypatch.setattr(provider, "_ensure_hangup_fallback_watchdog", AsyncMock())
+    monkeypatch.setattr(provider._tool_adapter, "execute_tool", AsyncMock(return_value={
+        "status": "success", "will_hangup": True, "message": "Have a great day!",
+    }))
+    monkeypatch.setattr(ToolExecutionContext, "get_tool_block_response", AsyncMock(return_value=None))
+    monkeypatch.setattr("src.providers.google_live.record_in_call_tool_result", AsyncMock())
+
+    await provider._handle_tool_call({"toolCall": {"functionCalls": [
+        {"id": "fc-hangup", "name": "hangup_call", "args": {"farewell_message": "Have a great day!"}}
+    ]}})
+
+    assert len(sent) == (2 if expect_prompt else 1)
+    assert "toolResponse" in sent[0]
+    if expect_prompt:
+        assert "clientContent" in sent[1]
+    else:
+        assert provider._hangup_fallback_audio_started is True
+        assert provider._force_farewell_sent is False
+        await provider._handle_turn_complete()
+        assert [call.args[0]["type"] for call in events.await_args_list] == [
+            "AgentAudioDone", "HangupReady",
+        ]
+        assert provider._hangup_after_response is False
+
+
+@pytest.mark.asyncio
 async def test_3_8_uses_shared_tool_policy_for_declaration_and_result(monkeypatch):
     provider = GoogleLiveProvider(
         config=GoogleProviderConfig(llm_model="gemini-3.8-live"),

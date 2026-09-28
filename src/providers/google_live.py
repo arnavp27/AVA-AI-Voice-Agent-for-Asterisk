@@ -2323,6 +2323,18 @@ class GoogleLiveProvider(AIProviderInterface):
                 )
 
                 if func_name == "hangup_call" and self._force_farewell_text:
+                    if is_gemini_3_8 and self._in_audio_burst:
+                        # Gemini 3.8 can call the tool while still speaking its
+                        # farewell. A new clientContent turn interrupts that audio,
+                        # and the resulting provider barge-in drops its tail.
+                        # Let the existing turn complete (or the watchdog handle
+                        # a missing turnComplete) instead of prompting again.
+                        self._hangup_fallback_audio_started = True
+                        logger.info(
+                            "Skipping forced farewell while Gemini 3.8 audio is active",
+                            call_id=self._call_id,
+                        )
+                        continue
                     self._post_hangup_output_detected = False
                     # Send farewell prompt immediately after tool response for both API modes.
                     # The delayed approach (3s wait) was unreliable - WebSocket or call can close
