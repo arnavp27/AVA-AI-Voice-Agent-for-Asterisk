@@ -345,21 +345,23 @@ providers:
 
 Google publishes Gemini Live models on two surfaces with different lifecycles. Pick based on which auth mode you're using (see [Provider-Vertex-Setup.md](Provider-Vertex-Setup.md) for Vertex AI auth):
 
-| Model ID | Surface | Status (2026-04) | Notes |
+| Model ID | Surface | Status | Notes |
 |----------|---------|------------------|-------|
 | `gemini-2.5-flash-native-audio-latest` | Developer API | Preview alias | **Shipped default.** Tracks Google's newest 2.5 native-audio snapshot automatically. |
 | `gemini-2.5-flash-native-audio-preview-12-2025` | Developer API | Preview, dated | Pin this for reproducibility — guarantees a fixed snapshot. |
 | `gemini-3.1-flash-live-preview` | Developer API | Preview, newest generation | Gemini 3.1 generation Live model. Evaluate before flipping the default; tool-calling parity not yet validated for AAVA. |
-| `gemini-3.8-live` | Developer API **or** Vertex AI | **GA** | Opt-in 3.8 Live. AAVA forces AUDIO output and uses ID-matched tool replies; read-only extension checks are non-blocking, while call-state actions remain blocking. Live-call qualification is pending. |
+| `gemini-3.8-live` | Developer API **or** Vertex AI | **GA** | Opt-in 3.8 Live. AAVA forces AUDIO output and uses ID-matched tool replies; read-only extension checks are non-blocking, while call-state actions remain blocking. Limited Vertex live-call validation is complete; broader qualification remains. |
 | `gemini-live-2.5-flash-native-audio` | **Vertex AI** | **GA** | Use via `use_vertex_ai: true`. SLA, VPC-SC, fewer function-calling bugs (see [Provider-Vertex-Setup.md](Provider-Vertex-Setup.md)). |
 
 **Recommendation:**
-- **Production voice agents** → use **Vertex AI mode** (`use_vertex_ai: true`) with `gemini-live-2.5-flash-native-audio` until 3.8 is qualified with AAVA test calls. This is the path where server-side barge-in (`serverContent.interrupted`) has been empirically reliable. See the **Barge-In (Interruption)** section below and [Provider-Vertex-Setup.md](Provider-Vertex-Setup.md).
+- **Production voice agents** → keep the established **Vertex AI mode** (`use_vertex_ai: true`) with `gemini-live-2.5-flash-native-audio` until 3.8 has broader production qualification. See the **Barge-In (Interruption)** section below and [Provider-Vertex-Setup.md](Provider-Vertex-Setup.md).
 - **Evaluating Gemini 3.8 Live** → select `gemini-3.8-live` with either API mode. It is [GA on Vertex AI](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/live-api) and [available on the Developer API](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live). Google defaults its function calls to non-blocking; AAVA keeps call-control tools blocking and allows only read-only extension status checks to run asynchronously. Test greeting, transcription, interruption, tools, transfer, and farewell before production use; the existing 2.5 default is unchanged.
 
 - **Developer API evaluation / non-prod** → the shipped `gemini-2.5-flash-native-audio-latest` works for basic conversation flow but server-side barge-in is unreliable. Acceptable for demos and feature evaluation; not recommended for production telephony where mid-utterance interruption matters.
 - **Pinned snapshot for reproducibility** → use `gemini-2.5-flash-native-audio-preview-12-2025` (or dated `-09-2025`) instead of the floating `-latest` alias.
 - **Evaluating Gemini 3.1** → swap to `gemini-3.1-flash-live-preview` in a non-prod context first; tool-calling and barge-in parity not yet validated for AAVA — report back via Discord/issues.
+
+On voiprnd, Vertex `us-central1` 3.8 call `1790560988.243` completed with interruption, extension and calendar tools, an unanswered attended transfer that returned to the agent, and a drained farewell/hangup. Vertex 2.5 call `1790561587.250` also completed after a model switch, including tools, unanswered-transfer recovery, and hangup. These are one environment's live validations, not a blanket guarantee for every region, Developer API mode, or production workload. After a provider model change and AI Engine restart, wait for `/health` to report `status: healthy` and `ari_connected: true` before placing a test call; a container-restart acknowledgement alone can precede ARI/Stasis registration.
 
 Gemini 3.8 Live tool declarations use an explicit execution policy. New tools default to `BLOCKING`; `check_extension_status` is `NON_BLOCKING` with `WHEN_IDLE` result scheduling. Calls are tracked by Google's function-call ID, duplicate IDs are ignored, and cancellations stop queued or read-only work. If a transfer or other state-changing action is already running, AAVA lets it finish rather than canceling halfway through; after a disconnect it records the outcome without sending a result into a closed session. Other Google Live models retain their existing tool protocol.
 
