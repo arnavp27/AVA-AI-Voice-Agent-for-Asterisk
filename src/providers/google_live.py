@@ -254,6 +254,7 @@ class GoogleLiveProvider(AIProviderInterface):
         self._force_farewell_text: str = ""
         self._force_farewell_sent: bool = False
         self._post_hangup_output_detected: bool = False
+        self._terminal_audio_cutoff_after_tool: bool = False
         
         # Initialize tool adapter early (before start_session) so engine can inject context
         # This ensures _session_store, _ari_client, etc. are available for tool execution
@@ -809,6 +810,7 @@ class GoogleLiveProvider(AIProviderInterface):
         self._ws_unavailable_logged = False
         self._ws_send_close_logged = False
         self._hangup_ready_emitted = False
+        self._terminal_audio_cutoff_after_tool = False
         self._input_transcription_buffer = ""
         self._output_transcription_buffer = ""
         self._model_text_buffer = ""
@@ -1704,7 +1706,7 @@ class GoogleLiveProvider(AIProviderInterface):
         # Handle output transcription (AI speech) - per official API docs
         # Like inputTranscription, API sends incremental fragments that must be concatenated
         output_transcription = content.get("outputTranscription")
-        if output_transcription:
+        if output_transcription and not self._terminal_audio_cutoff_after_tool:
             text = output_transcription.get("text", "")
             if text:
                 self._turn_has_assistant_output = True
@@ -1786,7 +1788,7 @@ class GoogleLiveProvider(AIProviderInterface):
             
             # Handle text output (for debugging/logging only)
             # Note: We now get cleaner AI transcriptions from outputTranscription field
-            if "text" in part:
+            if "text" in part and not self._terminal_audio_cutoff_after_tool:
                 text = part["text"]
                 logger.debug(
                     "Google Live text response from modelTurn (not saved - using outputTranscription instead)",
@@ -1953,6 +1955,11 @@ class GoogleLiveProvider(AIProviderInterface):
             mime_type: inlineData mimeType (may include `rate=...`)
         """
         try:
+            # A terminal tool call after Gemini 3.8's spoken farewell can
+            # produce an additional model continuation. Keep already queued
+            # farewell audio, but never enqueue that post-hangup speech.
+            if self._terminal_audio_cutoff_after_tool:
+                return
             self._last_audio_out_monotonic = time.monotonic()
             if self._hangup_fallback_armed:
                 self._hangup_fallback_audio_started = True
@@ -2282,6 +2289,12 @@ class GoogleLiveProvider(AIProviderInterface):
                 safe_result = self._build_tool_response_payload(func_name, result)
                 use_vertex = getattr(self, '_vertex_active', getattr(self.config, 'use_vertex_ai', False))
                 is_gemini_3_8 = self._normalize_model_name(self.config.llm_model) == self.GEMINI_3_8_LIVE_MODEL
+                terminal_after_spoken_farewell = bool(
+                    func_name == "hangup_call"
+                    and result.get("will_hangup")
+                    and is_gemini_3_8
+                    and self._in_audio_burst
+                )
                 if is_gemini_3_8:
                     if not safe_result:
                         safe_result = {"status": "error", "message": "Tool returned no result; do not retry automatically."}
@@ -2292,6 +2305,13 @@ class GoogleLiveProvider(AIProviderInterface):
                     behavior, scheduling = self._tool_policy(func_name or "")
                     if behavior == ToolExecutionBehavior.NON_BLOCKING:
                         safe_result["scheduling"] = scheduling.value
+                if terminal_after_spoken_farewell:
+                    # Mark the caller-facing boundary before awaiting the tool
+                    # response send: Gemini may emit its continuation as soon
+                    # as that send completes.
+                    self._terminal_audio_cutoff_after_tool = True
+                    safe_result.pop("instruction", None)
+                    safe_result["message"] = "Farewell already spoken; do not speak again."
                 if use_vertex and not is_gemini_3_8:
                     func_response = {
                         "name": func_name,
@@ -2308,7 +2328,7 @@ class GoogleLiveProvider(AIProviderInterface):
                         "functionResponses": [func_response]
                     }
                 }
-                if not await self._send_message(tool_response):
+                if not await self._send_message(tool_response) and not terminal_after_spoken_farewell:
                     logger.warning(
                         "Google Live tool response not sent after session closed",
                         call_id=owner_call_id,
@@ -2323,17 +2343,43 @@ class GoogleLiveProvider(AIProviderInterface):
                 )
 
                 if func_name == "hangup_call" and self._force_farewell_text:
-                    if is_gemini_3_8 and self._in_audio_burst:
-                        # Gemini 3.8 can call the tool while still speaking its
-                        # farewell. A new clientContent turn interrupts that audio,
-                        # and the resulting provider barge-in drops its tail.
-                        # Let the existing turn complete (or the watchdog handle
-                        # a missing turnComplete) instead of prompting again.
-                        self._hangup_fallback_audio_started = True
+                    if terminal_after_spoken_farewell:
+                        # The model has already spoken the farewell before
+                        # calling this blocking terminal tool. A new prompt
+                        # interrupts it; even the tool response alone can make
+                        # 3.8 speak a redundant "call disconnected" continuation.
+                        # The response was acknowledged above. End this output
+                        # locally and drain only the audio already enqueued.
+                        had_active_audio = self._in_audio_burst
+                        self._in_audio_burst = False
+                        self._hangup_after_response = False
+                        self._hangup_fallback_emitted = True
+                        if self._output_transcription_buffer:
+                            spoken = self._output_transcription_buffer.strip()
+                            self._last_final_assistant_text = spoken
+                            with contextlib.suppress(Exception):
+                                await self._track_conversation_message("assistant", spoken)
+                            self._output_transcription_buffer = ""
+                            self._last_output_transcription_fragment = ""
+                            self._model_text_buffer = ""
                         logger.info(
-                            "Skipping forced farewell while Gemini 3.8 audio is active",
+                            "Completing Gemini 3.8 spoken farewell at hangup tool boundary",
                             call_id=self._call_id,
                         )
+                        if self.on_event and had_active_audio:
+                            await self.on_event({
+                                "type": "AgentAudioDone",
+                                "call_id": self._call_id,
+                                "streaming_done": True,
+                            })
+                        if self.on_event and not self._hangup_ready_emitted:
+                            await self.on_event({
+                                "type": "HangupReady",
+                                "call_id": self._call_id,
+                                "reason": "farewell_tool_boundary",
+                                "had_audio": True,
+                            })
+                            self._hangup_ready_emitted = True
                         continue
                     self._post_hangup_output_detected = False
                     # Send farewell prompt immediately after tool response for both API modes.
@@ -2766,6 +2812,7 @@ class GoogleLiveProvider(AIProviderInterface):
             self._force_farewell_text = ""
             self._force_farewell_sent = False
             self._post_hangup_output_detected = False
+            self._terminal_audio_cutoff_after_tool = False
             self._last_audio_out_monotonic = None
             self._user_end_intent = None
             self._assistant_farewell_intent = None

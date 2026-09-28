@@ -53,10 +53,15 @@ async def test_hangup_tool_preserves_active_3_8_farewell_without_changing_legacy
     provider._allowed_tools = ["hangup_call"]
     provider._in_audio_burst = audio_active
     provider._turn_has_assistant_output = audio_active
+    provider._output_transcription_buffer = "Thanks for calling! Have a great day!" if audio_active else ""
     sent = []
 
     async def capture(payload):
         sent.append(payload)
+        if model == "gemini-3.8-live" and audio_active and "toolResponse" in payload:
+            # The provider can begin its post-tool continuation before the
+            # send await returns; it must already be caller-muted.
+            await provider._handle_audio_output("AA==")
         return True
 
     monkeypatch.setattr(provider, "_send_message", capture)
@@ -64,6 +69,7 @@ async def test_hangup_tool_preserves_active_3_8_farewell_without_changing_legacy
     monkeypatch.setattr(provider._tool_adapter, "execute_tool", AsyncMock(return_value={
         "status": "success", "will_hangup": True, "message": "Have a great day!",
     }))
+    monkeypatch.setattr(provider, "_track_conversation_message", AsyncMock())
     monkeypatch.setattr(ToolExecutionContext, "get_tool_block_response", AsyncMock(return_value=None))
     monkeypatch.setattr("src.providers.google_live.record_in_call_tool_result", AsyncMock())
 
@@ -76,13 +82,24 @@ async def test_hangup_tool_preserves_active_3_8_farewell_without_changing_legacy
     if expect_prompt:
         assert "clientContent" in sent[1]
     else:
-        assert provider._hangup_fallback_audio_started is True
+        assert provider._terminal_audio_cutoff_after_tool is True
         assert provider._force_farewell_sent is False
-        await provider._handle_turn_complete()
+        response = sent[0]["toolResponse"]["functionResponses"][0]["response"]
+        assert "do not speak again" in response["message"]
+        assert "instruction" not in response
         assert [call.args[0]["type"] for call in events.await_args_list] == [
             "AgentAudioDone", "HangupReady",
         ]
         assert provider._hangup_after_response is False
+        assert provider._last_final_assistant_text == "Thanks for calling! Have a great day!"
+        await provider._handle_server_content({"serverContent": {
+            "outputTranscription": {"text": "The call has been disconnected."},
+            "modelTurn": {"parts": [{"inlineData": {
+                "mimeType": "audio/pcm;rate=24000", "data": "AA==",
+            }}]},
+        }})
+        assert provider._output_transcription_buffer == ""
+        assert len(events.await_args_list) == 2
 
 
 @pytest.mark.asyncio

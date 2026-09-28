@@ -160,6 +160,100 @@ async def test_attended_transfer_pickup_replaces_ringing_leg_before_cleanup():
 
 
 @pytest.mark.asyncio
+async def test_unanswered_attended_transfer_leg_end_resumes_caller_before_timeout(monkeypatch):
+    engine = _build_engine({"enabled": True, "caller_declined_prompt": ""})
+    session = CallSession(
+        call_id="call-no-answer",
+        caller_channel_id="caller-no-answer",
+    )
+    session.current_action = {
+        "type": "attended_transfer",
+        "agent_channel_id": "agent-no-answer",
+        "answered": False,
+    }
+    session.audio_capture_enabled = False
+    await engine.session_store.upsert_call(session)
+    engine.register_attended_transfer_agent_channel(session.call_id, "agent-no-answer")
+
+    hangups = []
+    moh_stops = []
+
+    async def fake_hangup(channel_id):
+        hangups.append(channel_id)
+
+    async def fake_command(*, method, resource, **kwargs):
+        moh_stops.append((method, resource))
+
+    monkeypatch.setattr(engine.ari_client, "hangup_channel", fake_hangup)
+    monkeypatch.setattr(engine.ari_client, "send_command", fake_command)
+
+    await engine._handle_channel_destroyed({
+        "channel": {"id": "agent-no-answer"},
+        "cause": 16,
+        "cause_txt": "Normal Clearing",
+    })
+    # The paired StasisEnd must not turn the recovered transfer into a call end.
+    await engine._handle_stasis_end({"channel": {"id": "agent-no-answer"}})
+
+    updated = await engine.session_store.get_by_call_id(session.call_id)
+    assert updated is session
+    assert updated.current_action is None
+    assert updated.audio_capture_enabled is True
+    assert "agent-no-answer" not in engine._attended_transfer_agent_channel_to_call_id
+    assert hangups == ["agent-no-answer"]
+    assert ("DELETE", "channels/caller-no-answer/moh") in moh_stops
+
+
+@pytest.mark.asyncio
+async def test_transfer_abort_does_not_resurrect_caller_hung_up_during_failure_prompt(monkeypatch):
+    engine = _build_engine({"enabled": True, "caller_declined_prompt": "Transfer unavailable."})
+    session = CallSession(call_id="call-gone", caller_channel_id="caller-gone")
+    session.current_action = {"type": "attended_transfer", "agent_channel_id": "agent-gone"}
+    await engine.session_store.upsert_call(session)
+    engine.register_attended_transfer_agent_channel(session.call_id, "agent-gone")
+
+    async def fake_tts(*, call_id, text, timeout_sec):
+        await engine.session_store.remove_call(call_id)
+        return None
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def unexpected_save(*args, **kwargs):
+        raise AssertionError("ended caller session must not be saved again")
+
+    monkeypatch.setattr(engine, "_local_ai_server_tts", fake_tts)
+    monkeypatch.setattr(engine.ari_client, "hangup_channel", noop)
+    monkeypatch.setattr(engine.ari_client, "send_command", noop)
+    monkeypatch.setattr(engine, "_save_session", unexpected_save)
+
+    await engine._attended_transfer_abort_and_resume(session, "agent-gone", reason="no-answer")
+
+    assert await engine.session_store.get_by_call_id(session.call_id) is None
+    assert "agent-gone" not in engine._attended_transfer_agent_channel_to_call_id
+
+
+@pytest.mark.asyncio
+async def test_answered_attended_transfer_leg_end_keeps_terminal_ownership(monkeypatch):
+    engine = _build_engine({"enabled": True})
+    session = CallSession(call_id="call-answered", caller_channel_id="caller-answered")
+    session.current_action = {
+        "type": "attended_transfer",
+        "agent_channel_id": "agent-answered",
+        "answered": True,
+    }
+    await engine.session_store.upsert_call(session)
+    engine.register_attended_transfer_agent_channel(session.call_id, "agent-answered")
+
+    async def unexpected_abort(*args, **kwargs):
+        raise AssertionError("answered agent leg must not resume AI")
+
+    monkeypatch.setattr(engine, "_attended_transfer_abort_and_resume", unexpected_abort)
+    await engine._cleanup_call("agent-answered")
+    assert await engine.session_store.get_by_call_id(session.call_id) is None
+
+
+@pytest.mark.asyncio
 async def test_attended_transfer_stream_falls_back_to_file_playback(monkeypatch):
     engine = _build_engine(
         {

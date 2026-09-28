@@ -7857,6 +7857,11 @@ class Engine:
     async def _attended_transfer_timeout_guard(self, call_id: str, agent_channel_id: str, *, timeout_sec: float) -> None:
         try:
             await asyncio.sleep(max(0.0, float(timeout_sec)) + 2.0)
+            # Asterisk normally destroys an unanswered leg at dial_timeout.
+            # Its channel-end handler may already own the resume path; do not
+            # race that recovery with a second timeout-driven mutation.
+            if self._attended_transfer_agent_channel_to_call_id.get(agent_channel_id) != call_id:
+                return
             session = await self.session_store.get_by_call_id(call_id)
             if not session:
                 # Session may have already been cleaned up; avoid leaking mappings.
@@ -9213,7 +9218,12 @@ class Engine:
         except Exception:
             logger.debug("Failed to play attended transfer decline prompt", call_id=call_id, reason=reason, exc_info=True)
         try:
-            session = await self.session_store.get_by_call_id(call_id) or session
+            # The caller may have hung up while the failure prompt was being
+            # synthesized or played. Never reinsert a removed call session.
+            current_session = await self.session_store.get_by_call_id(call_id)
+            if not current_session or bool(getattr(current_session, "cleanup_in_progress", False)):
+                return
+            session = current_session
             if session.current_action and session.current_action.get("type") == "attended_transfer":
                 session.current_action = None
             # Re-enable capture so the AI can resume.
@@ -9989,10 +9999,37 @@ class Engine:
                 session = await self.session_store.get_by_channel_id(channel_or_call_id)
             if not session:
                 # Attended transfer agent leg is a separate SIP channel that is not tracked in SessionStore.
-                # We keep an in-memory mapping so that if either side hangs up, we can clean up the other leg.
+                # The agent leg's pre-answer failure must resume the caller;
+                # only an answered agent leg may own whole-call cleanup.
                 mapped_call_id = self._attended_transfer_agent_channel_to_call_id.get(channel_or_call_id)
                 if mapped_call_id:
-                    session = await self.session_store.get_by_call_id(mapped_call_id)
+                    mapped_session = await self.session_store.get_by_call_id(mapped_call_id)
+                    if not mapped_session or bool(getattr(mapped_session, "cleanup_in_progress", False)):
+                        self._unregister_attended_transfer_agent_channel(channel_or_call_id)
+                        return
+                    action = getattr(mapped_session, "current_action", None) or {}
+                    action_agent_id = str(action.get("agent_channel_id") or "")
+                    if action.get("type") != "attended_transfer" or action_agent_id not in ("", str(channel_or_call_id)):
+                        # Stale/superseded leg ownership is not a caller
+                        # hangup. Retire its mapping without touching the
+                        # current call action.
+                        self._unregister_attended_transfer_agent_channel(channel_or_call_id)
+                        return
+                    if not bool(action.get("answered", False)):
+                        # Unregister before the first await so a paired
+                        # StasisEnd/ChannelDestroyed cannot tear down the
+                        # caller while recovery is in progress.
+                        self._unregister_attended_transfer_agent_channel(channel_or_call_id)
+                        logger.info(
+                            "Unanswered attended transfer leg ended; resuming caller",
+                            call_id=mapped_call_id,
+                            agent_channel_id=channel_or_call_id,
+                        )
+                        await self._attended_transfer_abort_and_resume(
+                            mapped_session, channel_or_call_id, reason="no-answer"
+                        )
+                        return
+                    session = mapped_session
             if not session:
                 predial_channel_map = getattr(self, "_predial_transfer_channel_to_call_id", {})
                 mapped_call_id = predial_channel_map.get(channel_or_call_id)
