@@ -131,6 +131,15 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
         }
     }, [expertEnabled]);
 
+    // Match the saved form value to the AUDIO-only setup sent for Gemini 3.8.
+    // This also corrects older configurations opened directly on that model.
+    useEffect(() => {
+        if (normalizeGoogleLiveModelForUi(config.llm_model) === 'gemini-3.8-live'
+            && config.response_modalities !== 'audio') {
+            onChange({ ...config, response_modalities: 'audio' });
+        }
+    }, [config.llm_model, config.response_modalities]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Auto-switch model when API mode changes so Vertex ↔ Developer models stay in sync.
     // This useEffect is the authoritative guard — it fires whenever use_vertex_ai flips
     // and corrects the model if it belongs to the wrong API group.
@@ -172,6 +181,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
         onChange({
             ...config,
             llm_model: model,
+            ...(model === 'gemini-3.8-live' ? { response_modalities: 'audio' } : {}),
             ...(config.use_vertex_ai
                 ? { vertex_location: preferredGoogleLiveVertexRegion(model, config.vertex_location) }
                 : {}),
@@ -1058,7 +1068,7 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                         </div>
                         <div className="space-y-2">
                             <div className="flex items-center gap-1.5">
-                                <label className="text-sm font-medium">Response Modalities</label>
+                                <label htmlFor="google_live_response_modalities" className="text-sm font-medium">Response Modalities</label>
                                 <HelpTooltip
                                     content={
                                         <>
@@ -1076,14 +1086,21 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                                 />
                             </div>
                             <select
+                                id="google_live_response_modalities"
                                 className="w-full p-2 rounded border border-input bg-background"
-                                value={config.response_modalities || 'audio'}
+                                value={selectedModel === 'gemini-3.8-live' ? 'audio' : (config.response_modalities || 'audio')}
                                 onChange={(e) => handleChange('response_modalities', e.target.value)}
+                                disabled={selectedModel === 'gemini-3.8-live'}
                             >
                                 <option value="audio">Audio Only</option>
                                 <option value="text">Text Only</option>
                                 <option value="audio_text">Audio & Text</option>
                             </select>
+                            {selectedModel === 'gemini-3.8-live' && (
+                                <p className="text-xs text-muted-foreground">
+                                    Gemini 3.8 Live requires Audio Only. Enable output transcription below for text.
+                                </p>
+                            )}
                         </div>
                         <div className="flex items-center space-x-2">
                             <input

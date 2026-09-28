@@ -14,7 +14,10 @@ vi.mock('../../../hooks/useConfirmDialog', () => ({
 
 function FormHarness({ initialConfig }: { initialConfig: Record<string, unknown> }) {
     const [config, setConfig] = useState(initialConfig);
-    return <GoogleLiveProviderForm providerKey="google_live" config={config} onChange={setConfig} />;
+    return <>
+        <GoogleLiveProviderForm providerKey="google_live" config={config} onChange={setConfig} />
+        <div data-testid="saved-modalities">{String(config.response_modalities ?? '')}</div>
+    </>;
 }
 
 describe('GoogleLiveProviderForm model-aware Vertex regions', () => {
@@ -45,16 +48,20 @@ describe('GoogleLiveProviderForm model-aware Vertex regions', () => {
     });
 
     it('preserves a compatible 2.5 region and resets it only when switching to 3.8', async () => {
-        render(<FormHarness initialConfig={{ use_vertex_ai: true, llm_model: 'gemini-live-2.5-flash-native-audio', vertex_location: 'us-east1' }} />);
+        render(<FormHarness initialConfig={{ use_vertex_ai: true, llm_model: 'gemini-live-2.5-flash-native-audio', vertex_location: 'us-east1', response_modalities: 'text' }} />);
         const region = screen.getByLabelText('GCP Region') as HTMLSelectElement;
         const model = screen.getByLabelText('LLM Model') as HTMLSelectElement;
 
         expect(region.value).toBe('us-east1');
+        expect(screen.getByLabelText('Response Modalities')).toBeEnabled();
         expect(screen.getByRole('option', { name: 'US East (South Carolina)' })).toBeEnabled();
         expect(screen.getByRole('option', { name: /US \(multi-region\).*unavailable/ })).toBeDisabled();
 
         fireEvent.change(model, { target: { value: 'gemini-3.8-live' } });
         expect(region.value).toBe('us-central1');
+        expect(screen.getByLabelText('Response Modalities')).toBeDisabled();
+        expect((screen.getByLabelText('Response Modalities') as HTMLSelectElement).value).toBe('audio');
+        expect(screen.getByTestId('saved-modalities')).toHaveTextContent('audio');
         expect(screen.getByRole('status')).toHaveTextContent('listed in us-central1');
         await waitFor(() => expect(axios.get).toHaveBeenCalled());
     });
@@ -65,8 +72,21 @@ describe('GoogleLiveProviderForm model-aware Vertex regions', () => {
             target: { value: 'gemini-live-2.5-flash-native-audio' },
         });
         expect((screen.getByLabelText('GCP Region') as HTMLSelectElement).value).toBe('us-central1');
+        expect(screen.getByLabelText('Response Modalities')).toBeEnabled();
         expect(screen.getByRole('option', { name: /EU \(multi-region\).*unavailable/ })).toBeDisabled();
         await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    });
+
+    it('normalizes an existing 3.8 Text Only setting when the form opens', async () => {
+        render(<FormHarness initialConfig={{
+            use_vertex_ai: true,
+            llm_model: 'gemini-3.8-live',
+            vertex_location: 'us-central1',
+            response_modalities: 'text',
+        }} />);
+        expect(screen.getByLabelText('Response Modalities')).toBeDisabled();
+        expect((screen.getByLabelText('Response Modalities') as HTMLSelectElement).value).toBe('audio');
+        await waitFor(() => expect(screen.getByTestId('saved-modalities')).toHaveTextContent('audio'));
     });
 
     it('chooses a shared region when toggling to Vertex changes the model', async () => {
