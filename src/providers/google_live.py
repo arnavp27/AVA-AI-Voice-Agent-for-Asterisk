@@ -176,6 +176,13 @@ class GoogleLiveProvider(AIProviderInterface):
         "gemini-live-2.5-flash-preview": DEFAULT_LIVE_MODEL,
     }
 
+    def uses_full_duplex_barge_in(self) -> bool:
+        """Only 3.8 opts into provider-owned interruption during playback."""
+        return bool(
+            self._normalize_model_name(self.config.llm_model) == self.GEMINI_3_8_LIVE_MODEL
+            and getattr(self.config, "full_duplex_barge_in_3_8", True)
+        )
+
     def __init__(
         self,
         config: GoogleProviderConfig,

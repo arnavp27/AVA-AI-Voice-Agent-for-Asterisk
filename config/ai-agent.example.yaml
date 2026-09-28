@@ -206,6 +206,9 @@ providers:
   #   vertex_location: "us-central1"
   #   credentials_path: "/app/project/secrets/providers/acme_google_live/vertex-service-account.json"
   #   llm_model: "gemini-live-2.5-flash-native-audio"
+  #   # Gemini 3.8 Live forwards caller audio while speaking for server-side
+  #   # interruption; set false to restore legacy silence gating if needed.
+  #   # full_duplex_barge_in_3_8: false
   #
   # globex_google_live:
   #   enabled: true

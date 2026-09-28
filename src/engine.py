@@ -1605,6 +1605,15 @@ class Engine:
         session = await self.session_store.get_by_call_id(call_id)
         if not session or bool(getattr(session, "cleanup_in_progress", False)):
             return
+        # Google Live keeps a persistent playback stream across response segments.
+        # End the first-greeting state at the first drained segment, otherwise the
+        # long greeting barge-in guard is incorrectly applied to every later turn.
+        if drained and getattr(session, "conversation_state", None) == "greeting":
+            provider_name = getattr(session, "provider_name", None)
+            if self._get_provider_kind(provider_name) == "google_live":
+                coordinator = getattr(self, "conversation_coordinator", None)
+                if coordinator is not None:
+                    await coordinator.update_conversation_state(call_id, "listening")
         if clear_tts_gating_after_drain:
             await self._clear_tts_gating_after_provider_drain(
                 call_id,
@@ -4059,7 +4068,14 @@ class Engine:
     def _get_provider_kind(self, provider_name: Optional[str]) -> Optional[str]:
         if not provider_name:
             return None
-        return self.provider_kinds.get(provider_name) or provider_name
+        return getattr(self, "provider_kinds", {}).get(provider_name) or provider_name
+
+    def _google_live_full_duplex_barge_in(self, provider_name: str, provider: Any) -> bool:
+        """Keep the new interruption mode scoped to the configured 3.8 instance."""
+        if self._get_provider_kind(provider_name) != "google_live":
+            return False
+        check = getattr(provider, "uses_full_duplex_barge_in", None)
+        return bool(callable(check) and check())
 
     def _provider_fallback_is_allowed(self, provider_name: str, allow: set[str]) -> bool:
         """Match fallback policy by configured instance name or provider kind."""
@@ -11282,10 +11298,11 @@ class Engine:
                     return
                 if not getattr(session, "provider_session_active", False):
                     return
-                # Google Live needs silence substitution during ordinary output.
-                # Other native full-agent providers keep caller audio flowing so
-                # their provider-owned VAD/barge-in remains functional.
-                needs_gating = self._get_provider_kind(provider_name) == "google_live"
+                # Legacy Google Live sessions retain silence substitution; 3.8
+                # opts into server-owned VAD by receiving real caller audio.
+                # Other native full-agent providers remain unchanged.
+                full_duplex_barge_in = self._google_live_full_duplex_barge_in(provider_name, provider)
+                needs_gating = self._get_provider_kind(provider_name) == "google_live" and not full_duplex_barge_in
                 
                 if needs_gating and not session.audio_capture_enabled:
                     # Send silence instead of blocking so Google Live's continuous
@@ -11464,18 +11481,19 @@ class Engine:
                         exc_info=True,
                     )
                 # Provider-owned mode: local VAD fallback may flush local output (never cancels provider).
-                try:
-                    await self._maybe_provider_barge_in_fallback(
-                        session,
-                        pcm16=pcm_bytes,
-                        pcm_rate_hz=pcm_rate,
-                        audiosocket_wire=audio_bytes,
-                        source="audiosocket",
-                        wire_encoding=frame_format,
-                        wire_sample_rate=frame_rate,
-                    )
-                except Exception:
-                    logger.debug("Provider barge-in fallback check failed (AudioSocket)", call_id=caller_channel_id, exc_info=True)
+                if not full_duplex_barge_in:
+                    try:
+                        await self._maybe_provider_barge_in_fallback(
+                            session,
+                            pcm16=pcm_bytes,
+                            pcm_rate_hz=pcm_rate,
+                            audiosocket_wire=audio_bytes,
+                            source="audiosocket",
+                            wire_encoding=frame_format,
+                            wire_sample_rate=frame_rate,
+                        )
+                    except Exception:
+                        logger.debug("Provider barge-in fallback check failed (AudioSocket)", call_id=caller_channel_id, exc_info=True)
                 return
             else:
                 logger.debug(
@@ -12935,11 +12953,14 @@ class Engine:
         capabilities: Any,
         *,
         audio_capture_enabled: bool,
+        provider: Any = None,
     ) -> str:
         """Choose whether gated ExternalMedia caller audio is forwarded, silenced, or dropped."""
         if audio_capture_enabled:
             return "forward"
         if self._get_provider_kind(provider_name) == "google_live":
+            if self._google_live_full_duplex_barge_in(provider_name, provider):
+                return "forward"
             return "silence"
         if bool(
             capabilities
@@ -13221,6 +13242,7 @@ class Engine:
                     provider_name,
                     capabilities,
                     audio_capture_enabled=bool(session.audio_capture_enabled),
+                    provider=provider,
                 )
 
                 if gating_mode == "silence":
@@ -13292,16 +13314,17 @@ class Engine:
                     logger.debug("Continuous-input transport forward error", call_id=caller_channel_id, source=source, error=str(exc))
 
                 # Provider-owned mode: local VAD fallback may flush local output (never cancels provider).
-                try:
-                    await self._maybe_provider_barge_in_fallback(
-                        session,
-                        pcm16=pcm_for_barge_in,
-                        pcm_rate_hz=pcm_sample_rate,
-                        audiosocket_wire=None,
-                        source=source,
-                    )
-                except Exception:
-                    logger.debug("Provider barge-in fallback check failed (continuous)", call_id=caller_channel_id, source=source, exc_info=True)
+                if not self._google_live_full_duplex_barge_in(provider_name, provider):
+                    try:
+                        await self._maybe_provider_barge_in_fallback(
+                            session,
+                            pcm16=pcm_for_barge_in,
+                            pcm_rate_hz=pcm_sample_rate,
+                            audiosocket_wire=None,
+                            source=source,
+                        )
+                    except Exception:
+                        logger.debug("Provider barge-in fallback check failed (continuous)", call_id=caller_channel_id, source=source, exc_info=True)
                 return
 
             # Below: standard gating/barge-in logic for hybrid (P2) providers only

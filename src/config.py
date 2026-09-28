@@ -542,6 +542,9 @@ class GoogleProviderConfig(BaseModel):
     vad_start_of_speech_sensitivity: Optional[str] = Field(default="START_SENSITIVITY_HIGH")
     vad_prefix_padding_ms: int = Field(default=20, ge=0)
     vad_silence_duration_ms: int = Field(default=500, ge=0)
+    # Gemini 3.8 Live: let its server-side VAD hear the caller during playback.
+    # Disable to restore the legacy silence-gated behavior without changing 2.5.
+    full_duplex_barge_in_3_8: bool = Field(default=True)
 
     # Google Live response configuration
     response_modalities: str = Field(default="audio")  # "audio", "text", or "audio_text"

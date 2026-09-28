@@ -9,6 +9,20 @@ from src.providers.google_live import GoogleLiveProvider
 from src.tools.context import ToolExecutionContext
 
 
+@pytest.mark.parametrize("model,enabled,expected", [
+    ("gemini-3.8-live", True, True),
+    ("models/gemini-3.8-live", True, True),
+    ("gemini-3.8-live", False, False),
+    ("gemini-live-2.5-flash-native-audio", True, False),
+])
+def test_full_duplex_barge_in_is_3_8_only_and_can_be_rolled_back(model, enabled, expected):
+    provider = GoogleLiveProvider(
+        config=GoogleProviderConfig(llm_model=model, full_duplex_barge_in_3_8=enabled),
+        on_event=lambda event: None,
+    )
+    assert provider.uses_full_duplex_barge_in() is expected
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_vertex", [False, True])
 async def test_3_8_setup_is_audio_only_and_tools_are_blocking(monkeypatch, use_vertex):

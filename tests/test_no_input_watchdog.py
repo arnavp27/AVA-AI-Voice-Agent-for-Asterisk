@@ -453,6 +453,39 @@ async def test_no_input_provider_output_drains_without_resetting_policy_state():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider_name,drained,expected_state", [
+    ("google_live", True, "listening"),
+    ("google_live", False, "greeting"),
+    ("openai_realtime", True, "greeting"),
+])
+async def test_google_greeting_state_ends_only_after_first_drained_segment(
+    provider_name, drained, expected_state,
+):
+    engine = Engine.__new__(Engine)
+    engine.session_store = SessionStore()
+    engine.conversation_coordinator = ConversationCoordinator(engine.session_store)
+    engine.provider_kinds = {}
+    engine._provider_output_drain_tasks = {"call-greeting": asyncio.current_task()}
+    engine._agent_output_active_calls = {"call-greeting"}
+    engine._wait_for_call_audio_drain = AsyncMock(return_value=drained)
+    engine._terminal_transport_quiet_sec = lambda: 0.0
+    engine.no_input_watchdog = SimpleNamespace(note_agent_output_end=AsyncMock())
+    session = CallSession(
+        call_id="call-greeting", caller_channel_id="channel-greeting",
+        provider_name=provider_name, conversation_state="greeting",
+    )
+    await engine.session_store.upsert_call(session)
+
+    await engine._finish_provider_output_after_drain(
+        session.call_id, reset_timer=True, preserve_policy_state=False,
+    )
+
+    saved = await engine.session_store.get_by_call_id(session.call_id)
+    assert saved.conversation_state == expected_state
+    engine.no_input_watchdog.note_agent_output_end.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_openai_greeting_gating_is_released_only_after_transport_drain():
     engine = Engine.__new__(Engine)
     engine.session_store = SessionStore()
