@@ -1220,34 +1220,6 @@ const GoogleLiveProviderForm: React.FC<GoogleLiveProviderFormProps> = ({ config,
                             />
                             <p className="text-xs text-muted-foreground">Optional max gain applied during normalization.</p>
                         </div>
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-1.5">
-                                <label className="text-sm font-medium">Farewell Hangup Delay (seconds)</label>
-                                <HelpTooltip
-                                    content={
-                                        <>
-                                            <strong>Grace period after farewell audio</strong> finishes playing before AAVA actually hangs up the SIP channel.
-                                            <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                                                <li>Prevents Asterisk from cutting off the last syllable of "Goodbye."</li>
-                                                <li>Leave blank to inherit the global default (2.5s)</li>
-                                                <li>Set to 0 only if you control exactly when audio ends</li>
-                                            </ul>
-                                        </>
-                                    }
-                                />
-                            </div>
-                            <input
-                                type="number"
-                                step="0.5"
-                                className="w-full p-2 rounded border border-input bg-background"
-                                value={config.farewell_hangup_delay_sec ?? ''}
-                                onChange={(e) => handleChange('farewell_hangup_delay_sec', e.target.value ? parseFloat(e.target.value) : null)}
-                                placeholder="Use global default (2.5s)"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                Seconds to wait after farewell audio before hanging up. Leave empty to use global default.
-                            </p>
-                        </div>
                     </div>
                 </div>
 

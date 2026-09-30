@@ -197,8 +197,9 @@ required PATCH fields; it removes supported optional fields.
 Built-ins include transfer, attended/cancel transfer, hangup, voicemail,
 `check_extension_status`, email/transcript, and Google/Microsoft calendar tools.
 The settings endpoint rejects built-in, managed, MCP, identity, and other
-registry-reserved tool names. `farewell_hangup_delay_sec` must be finite and
-between 0 and 300 seconds.
+registry-reserved tool names. `farewell_hangup_delay_sec` is deprecated and
+ignored by the engine. The API continues to read/write it for compatibility
+without changing hangup timing. It must be finite and between 0 and 300 seconds.
 
 Mutating endpoints persist the local configuration override but do not restart
 the AI Engine. Apply tool changes using the AI Engine restart endpoint after the

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **Unused farewell hangup delay** ([#677](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/677)): `farewell_hangup_delay_sec` is deprecated and ignored. Removed its misleading Admin UI controls and shipped YAML value; existing global/provider YAML values and the tools settings API remain compatible. Terminal hangups continue to drain caller-facing audio, including the pipeline fallback when an LLM speaks a farewell without invoking `hangup_call`. Historical 2.5/3/5-second defaults no longer describe runtime behavior.
+
 ### Added
 
 - **Gemini 3.8 Live on Developer API and Vertex AI** ([#673](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/673)): adds model selection on both surfaces, AUDIO-only setup, ID-matched function responses, and cancellation-aware tool execution. Read-only extension status checks can run non-blocking; call-state and telephony actions remain blocking. The Admin UI shows model-aware Vertex regions, resets an incompatible region to the shared `us-central1` default when switching models, and locks 3.8 response modality to Audio Only. Gemini 3.8 uses full-duplex caller audio for barge-in and drains a spoken farewell without forwarding a post-hangup model continuation. Shared attended-transfer cleanup now resumes the caller when an agent leg ends before answer. A Vertex `us-central1` 3.8 call (`1790560988.243`) exercised interruption, tools, unanswered-transfer recovery, and hangup; a Vertex 2.5 retest (`1790561587.250`) exercised the existing model path and the same recovery. Broader production and Developer API qualification remains outstanding. Shipped model defaults are unchanged.

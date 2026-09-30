@@ -559,7 +559,7 @@ class GoogleLiveProvider(AIProviderInterface):
         and HangupReady to reliably tear down the call.
         """
         call_id = self._call_id
-        # Keep conservative defaults; engine still applies farewell_hangup_delay_sec before ARI hangup.
+        # Keep conservative defaults; the engine drains caller-facing audio before hangup.
         idle_sec = float(getattr(self.config, "hangup_fallback_audio_idle_sec", 1.25) or 1.25)
         min_armed_sec = float(getattr(self.config, "hangup_fallback_min_armed_sec", 0.8) or 0.8)
         turn_complete_timeout_sec = float(

@@ -591,6 +591,10 @@ def test_settings_get_and_patch_farewell_delay(client):
     assert r.status_code == 200
     assert r.json()["farewell_hangup_delay_sec"] == 4.0
     assert client.cfg_state["cfg"]["farewell_hangup_delay_sec"] == 4.0
+    r = client.patch("/api/tools/settings", json={"default_action_timeout": 30})
+    assert r.status_code == 200
+    assert r.json()["farewell_hangup_delay_sec"] == 4.0
+    assert client.cfg_state["cfg"]["farewell_hangup_delay_sec"] == 4.0
 
 
 @pytest.mark.parametrize("value", ["nan", "inf", "-inf", -1, 301])

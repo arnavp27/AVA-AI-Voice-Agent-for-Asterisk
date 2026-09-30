@@ -1130,6 +1130,20 @@ tools:
     #   <html>...</html>
 ```
 
+**Farewell completion:** The engine waits for caller-facing audio to drain before
+hanging up. The legacy root-level and provider-level `farewell_hangup_delay_sec`
+fields are deprecated and ignored; existing values remain loadable but add no
+extra pause. They are no longer editable in the Admin UI. For Local AI,
+`farewell_mode` and `farewell_timeout_sec` remain supported and have separate
+purposes.
+
+The modular pipeline also handles a spoken farewell without a `hangup_call`
+tool invocation when both caller end-of-call intent and an assistant farewell
+are recognized. It plays the response, drains audio, and hangs up. This fallback
+does not depend on `farewell_hangup_delay_sec` and is not a guarantee that every
+model response will be recognized as a closing.
+
+
 ### Enable Tools per Context / Pipeline (Allowlisting)
 
 Tools are allowlisted per **context** (and optionally per **pipeline**).

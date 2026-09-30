@@ -1890,20 +1890,15 @@ const ToolForm = ({ config, contexts, hangupUsage, onChange, onContextsChange, o
                     />
                     {config.hangup_call?.enabled !== false && (
                         <div className="mt-4 pl-4 border-l-2 border-border ml-2 space-y-4">
+                            <p className="text-xs text-muted-foreground">
+                                Farewell audio drains before hangup. The legacy farewell_hangup_delay_sec setting is deprecated and ignored.
+                            </p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormInput
                                     label="Default Farewell Message"
                                     value={config.hangup_call?.farewell_message || ''}
                                     onChange={(e) => updateNestedConfig('hangup_call', 'farewell_message', e.target.value)}
                                     tooltip="Used when the AI calls hangup_call without specifying a farewell. The AI typically provides its own message."
-                                />
-                                <FormInput
-                                    label="Farewell Hangup Delay (seconds)"
-                                    type="number"
-                                    step="0.5"
-                                    value={config.farewell_hangup_delay_sec ?? 2.5}
-                                    onChange={(e) => updateConfig('farewell_hangup_delay_sec', parseFloat(e.target.value) || 2.5)}
-                                    tooltip="Time to wait after farewell audio before hanging up. Increase if farewell gets cut off."
                                 />
                                 <FormSelect
                                     label="On Provider Start Failure"

@@ -1649,7 +1649,7 @@ BUILTIN_TOOL_NAMES = (
 )
 _BUILTIN_TOOL_SET = frozenset(BUILTIN_TOOL_NAMES)
 
-# Root-level config key the Admin UI exposes in the built-in tools section.
+# Deprecated root-level key retained for existing API clients and saved YAML.
 _FAREWELL_DELAY_KEY = "farewell_hangup_delay_sec"
 
 
@@ -1662,7 +1662,11 @@ class BuiltinToolOut(BaseModel):
 
 class ToolsSettingsOut(BaseModel):
     """Tools-block scalar/structural settings that are not individual tools."""
-    farewell_hangup_delay_sec: Optional[float] = None
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored by the engine; retained for compatibility.",
+        deprecated=True,
+    )
     settings: Dict[str, Any]  # remaining tools-block keys (extensions, default_action_timeout, ...)
 
 
@@ -1773,7 +1777,7 @@ async def replace_builtin_tool(name: str, body: Dict[str, Any]):
 async def get_tools_settings():
     """Read tools-block settings that are not individual tools.
 
-    Includes the root-level ``farewell_hangup_delay_sec`` and any tools-block
+    Includes the deprecated, runtime-ignored root-level ``farewell_hangup_delay_sec`` and any tools-block
     keys that are neither built-in nor managed HTTP tools (e.g. ``extensions``,
     ``default_action_timeout``).
     """
@@ -1789,7 +1793,8 @@ async def get_tools_settings():
 async def patch_tools_settings(body: Dict[str, Any]):
     """Update tools-block settings.
 
-    ``farewell_hangup_delay_sec`` (if present) is written at config root; all
+    ``farewell_hangup_delay_sec`` is deprecated and ignored by the engine.
+    For compatibility, it is still written at config root when present; all
     other keys are deep-merged into the tools block. Set a key to ``null`` to
     remove it.
     """

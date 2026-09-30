@@ -275,10 +275,12 @@ class LocalProviderConfig(BaseModel):
     # Set based on your hardware speed (see LLM warmup time in logs)
     # Fast hardware: 5-10s, Slow hardware: 30-60s
     farewell_timeout_sec: float = Field(default=30.0)
-    # Farewell hangup delay - seconds to wait after farewell audio completes before hangup
-    # Ensures farewell message fully plays through RTP pipeline before disconnecting
-    # Increase if farewell gets cut off (typical farewells need 2-4 seconds)
-    farewell_hangup_delay_sec: float = Field(default=5.0)
+    # Deprecated compatibility field; terminal hangup uses audio drain instead.
+    farewell_hangup_delay_sec: float = Field(
+        default=5.0,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
     # Local tool-call handling policy:
     # - auto: derive from local_ai_server LLM capability probe
     # - strict: enforce full structured tool instructions
@@ -381,8 +383,12 @@ class DeepgramProviderConfig(BaseModel):
     voice_agent_base_url: str = Field(
         default="wss://agent.deepgram.com/v1/agent/converse"
     )
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
     @model_validator(mode="after")
     def _validate_flux_thresholds(self) -> "DeepgramProviderConfig":
@@ -449,8 +455,12 @@ class OpenAIProviderConfig(BaseModel):
     output_resampler: Literal["inherit", "linear", "bandlimited"] = Field(default="inherit")
     chunk_size_ms: int = Field(default=20)
     response_timeout_sec: float = Field(default=5.0)
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
 
 class TelnyxLLMProviderConfig(BaseModel):
@@ -569,8 +579,12 @@ class GoogleProviderConfig(BaseModel):
     websocket_endpoint: str = Field(
         default="wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
     )
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
     # Fallback watchdog tuning (Google Live only)
     hangup_fallback_audio_idle_sec: float = Field(default=1.25)
     hangup_fallback_min_armed_sec: float = Field(default=0.8)
@@ -654,8 +668,12 @@ class ElevenLabsProviderConfig(BaseModel):
     similarity_boost: float = Field(default=0.75)
     style: float = Field(default=0.0)
     use_speaker_boost: bool = Field(default=True)
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
 
 class CambAiProviderConfig(BaseModel):
@@ -675,8 +693,12 @@ class CambAiProviderConfig(BaseModel):
     # Output format for streaming TTS
     output_format: str = Field(default="pcm_s16le")  # pcm_s16le for raw PCM
     output_resampler: Literal["inherit", "linear", "bandlimited"] = Field(default="inherit")
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
 
 class FishAudioProviderConfig(BaseModel):
@@ -720,8 +742,12 @@ class FishAudioProviderConfig(BaseModel):
     # read budget in aggregate as long as audio continues arriving.
     connect_timeout_sec: float = Field(default=10.0, gt=0)
     read_timeout_sec: float = Field(default=30.0, gt=0)
-    # Provider-specific farewell hangup delay (overrides global)
-    farewell_hangup_delay_sec: Optional[float] = None
+    # Deprecated compatibility field; ignored by terminal audio drain.
+    farewell_hangup_delay_sec: Optional[float] = Field(
+        default=None,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
     @field_validator("base_url")
     @classmethod
@@ -1328,10 +1354,12 @@ class AppConfig(BaseModel):
     in_call_tools: Dict[str, Any] = Field(default_factory=dict)
     # MCP tool configuration (experimental)
     mcp: Optional[MCPConfig] = None
-    # Farewell hangup delay - seconds to wait after farewell audio completes before hangup
-    # Ensures farewell message fully plays through RTP pipeline before disconnecting
-    # Increase if farewell gets cut off (typical farewells need 2-4 seconds)
-    farewell_hangup_delay_sec: float = Field(default=5.0)
+    # Deprecated compatibility field; terminal hangup uses audio drain instead.
+    farewell_hangup_delay_sec: float = Field(
+        default=5.0,
+        description="Deprecated and ignored; farewell hangup waits for caller-facing audio drain.",
+        deprecated=True,
+    )
 
     # HIGH-3: behavior when the AI provider fails to start a session on an
     # already-answered channel. "announce_hangup" (default) plays a short error

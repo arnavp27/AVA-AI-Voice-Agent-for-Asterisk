@@ -808,20 +808,28 @@ def test_terminal_quiet_tail_covers_audiosocket_and_externalmedia():
 
 
 @pytest.mark.asyncio
-async def test_terminal_hangup_is_idempotent_and_uses_shared_drain():
+@pytest.mark.parametrize("legacy_delay", [0, 4, 300])
+async def test_terminal_hangup_is_idempotent_and_uses_shared_drain(legacy_delay):
     engine = Engine.__new__(Engine)
-    engine.config = SimpleNamespace(audio_transport="audiosocket")
+    engine.config = SimpleNamespace(
+        audio_transport="audiosocket",
+        farewell_hangup_delay_sec=legacy_delay,
+        providers={"google_live": {"farewell_hangup_delay_sec": 300}},
+    )
     engine.session_store = SessionStore()
     engine.conversation_coordinator = None
     engine.ari_client = SimpleNamespace(hangup_channel=AsyncMock())
     engine._wait_for_call_audio_drain = AsyncMock(return_value=True)
-    session = CallSession(call_id="terminal-call", caller_channel_id="channel-terminal")
+    session = CallSession(
+        call_id="terminal-call", caller_channel_id="channel-terminal", provider_name="google_live"
+    )
     await engine.session_store.upsert_call(session)
 
-    assert await engine._terminate_call_after_audio(
-        "terminal-call",
-        reason="test",
-        call_outcome="agent_hangup",
+    assert await asyncio.wait_for(
+        engine._terminate_call_after_audio(
+            "terminal-call", reason="test", call_outcome="agent_hangup"
+        ),
+        timeout=0.5,
     ) is True
     assert await engine._terminate_call_after_audio("terminal-call", reason="duplicate") is False
     updated = await engine.session_store.get_by_call_id("terminal-call")

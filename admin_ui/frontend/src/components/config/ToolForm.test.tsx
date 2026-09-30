@@ -238,3 +238,17 @@ describe('ToolForm — global device-state value mapping (issue #577)', () => {
         expect(lastCall.check_extension_status?.state_mapping).toBeUndefined();
     });
 });
+
+
+describe('ToolForm farewell delay deprecation (issue #677)', () => {
+    it('explains audio drain and preserves a legacy value when another tool setting changes', async () => {
+        const onChange = vi.fn();
+        render(<ToolForm config={{ ...baseConfig(), farewell_hangup_delay_sec: 4 }} onChange={onChange} />);
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+        expect(screen.queryByText('Farewell Hangup Delay (seconds)')).not.toBeInTheDocument();
+        expect(screen.getByText(/legacy farewell_hangup_delay_sec setting is deprecated and ignored/i)).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText('Default Farewell Message'), { target: { value: 'Goodbye!' } });
+        expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ farewell_hangup_delay_sec: 4 }));
+    });
+});
