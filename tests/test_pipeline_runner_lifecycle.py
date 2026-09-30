@@ -1134,3 +1134,69 @@ async def test_pipeline_dialog_consumer_restarts_after_unexpected_exit(monkeypat
 
     assert llm.transcripts == ["second turn survives"]
     await engine._cleanup_call(call_id)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_farewell_without_tool_waits_for_audio_drain(monkeypatch):
+    from src.core.models import CallSession
+
+    class FarewellLLM(LLMComponent):
+        async def generate(self, call_id, transcript, context, options):
+            return "Thank you for calling. Goodbye!"
+
+    engine = Engine(AppConfig(
+        default_provider="local",
+        providers={"local": {"enabled": True}},
+        asterisk={"host": "127.0.0.1", "username": "u", "password": "p"},
+        llm={"initial_greeting": "", "prompt": "You are helpful"},
+        pipelines={"farewell": {}},
+        active_pipeline="farewell",
+        audio_transport="audiosocket",
+        downstream_mode="file",
+        farewell_hangup_delay_sec=300,
+    ))
+    engine.pipeline_orchestrator._started = True
+    stt = _ResultStreamingStubSTT()
+    resolution = _StubResolution(
+        stt_adapter=stt,
+        stt_options={"streaming": True, "chunk_ms": 80},
+        llm_adapter=FarewellLLM(),
+    )
+    monkeypatch.setattr(engine.pipeline_orchestrator, "get_pipeline", lambda *args, **kwargs: resolution)
+    engine.ari_client.set_channel_var = AsyncMock(return_value=True)
+    engine.ari_client.hangup_channel = AsyncMock(return_value=True)
+    engine.playback_manager.play_audio = AsyncMock(return_value="farewell-playback")
+    drain_started = asyncio.Event()
+    drain_release = asyncio.Event()
+    hung_up = asyncio.Event()
+
+    async def drain(call_id, **kwargs):
+        assert kwargs["reason"] == "pipeline_farewell_without_tool"
+        drain_started.set()
+        await drain_release.wait()
+        return True
+
+    async def hangup(channel_id):
+        assert channel_id == "pipeline-no-tool-farewell"
+        hung_up.set()
+        return True
+
+    monkeypatch.setattr(engine, "_wait_for_call_audio_drain", drain)
+    engine.ari_client.hangup_channel.side_effect = hangup
+    session = CallSession(call_id="pipeline-no-tool-farewell", caller_channel_id="pipeline-no-tool-farewell")
+    session.pipeline_name = "farewell"
+    await engine.session_store.upsert_call(session)
+    try:
+        await engine._ensure_pipeline_runner(session, forced=True)
+        await asyncio.wait_for(stt.started.wait(), timeout=2)
+        await stt.results.put("That's all. Goodbye.")
+        await asyncio.wait_for(drain_started.wait(), timeout=2)
+        engine.playback_manager.play_audio.assert_awaited_once()
+        engine.ari_client.hangup_channel.assert_not_awaited()
+        drain_release.set()
+        await asyncio.wait_for(hung_up.wait(), timeout=2)
+        engine.ari_client.hangup_channel.assert_awaited_once()
+        assert session.call_outcome == "agent_hangup"
+    finally:
+        drain_release.set()
+        await engine._cleanup_call(session.call_id)
