@@ -28,6 +28,6 @@ import ConnectionRecoveryFields from './ConnectionRecoveryFields';
         const onChange = vi.fn();
         render(<ConnectionRecoveryFields config={{ connect_total_timeout_sec: 25, connect_max_retries: 0 }} onChange={onChange} />);
         fireEvent.change(screen.getByLabelText('Maximum connection wait (sec)'), { target: { value: '' } });
-        expect(onChange).toHaveBeenLastCalledWith({ connect_max_retries: 0 });
+        expect(onChange).toHaveBeenLastCalledWith({ connect_total_timeout_sec: undefined, connect_max_retries: 0 });
     });
  });

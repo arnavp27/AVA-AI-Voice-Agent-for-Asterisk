@@ -33,6 +33,8 @@ The total budget excludes session setup after a successful opening handshake, fa
 
 Rollback: set `connect_max_retries: 0`, restore `connect_timeout_sec: 10`, clear `connect_total_timeout_sec`, save, and restart AI Engine. This preserves all existing terminal failure handling.
 
+Verify the UI reset before call testing: set a maximum wait of 25 seconds, save and reopen the provider, then clear that field, make an unrelated edit, save and reopen again. The field must stay blank and `connect_total_timeout_sec` must be absent from the saved YAML. Clearing a saved per-attempt timeout or retry count likewise removes the YAML field and displays its legacy default (10 seconds or zero retries). Restore any unrelated edits before placing calls. Clearing the optional deadline changes connection timing after the engine restart; no extra attempts are enabled unless retries are configured.
+
 ## Real-call qualification matrix
 
 Use the deployed branch's actual supported transport and existing test Agents/dialplan routes. Select each provider via its Agent or `AI_PROVIDER` override. Test Google Developer API and Vertex separately if both are available. Local is a compatibility control. The Providers **Test Connection** button is useful for credential checks; it does not qualify a real call's media, greeting, tools, or cleanup.
@@ -91,7 +93,7 @@ Then recreate only AI Engine with its normal Compose files plus the temporary ov
 ```bash
 docker compose -p asterisk-ai-voice-agent \
   -f docker-compose.yml -f docker-compose.override.yml \
-  -f /tmp/aava-676-proxy.yaml up -d --force-recreate ai_engine
+  -f /tmp/aava-676-proxy.yaml up -d --no-build --force-recreate ai_engine
 ```
 
 Restart the proxy between cases to reset its counter. For a timeout test, use `--mode timeout --delay-sec 15` with a shorter per-attempt deadline; for exhaustion, use `--fail-count 4` with one retry. Do not infer recovery from the proxy counter alone: correlate engine attempts, setup, media, and teardown by call ID. Simultaneous calls share the proxy's hostname counter, so use sequential calls for deterministic failure/success cases.

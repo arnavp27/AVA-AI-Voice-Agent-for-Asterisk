@@ -10,7 +10,8 @@ export default function ConnectionRecoveryFields({ config, onChange }: Props) {
     const id = useId();
     const update = (key: string, raw: string) => {
         const next = { ...config };
-        if (raw === '') delete next[key];
+        // ProvidersPage merges updates; an explicit tombstone removes saved values.
+        if (raw === '') next[key] = undefined;
         else next[key] = Number(raw);
         onChange(next);
     };

@@ -25,7 +25,7 @@ async def main(args):
         tasks = []
         try:
             header = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=5)
-            method, target, protocol = header.split(b"\r\n", 1)[0].decode("ascii").split()
+            method, target, _protocol = header.split(b"\r\n", 1)[0].decode("ascii").split()
             host, port = target.rsplit(":", 1)
             host = host.lower()
             if method != "CONNECT" or port != "443" or not allowed(host):
