@@ -1076,7 +1076,8 @@ const ProvidersPage: React.FC = () => {
                                         <button
                                             onClick={() => handleSetAsDefault(name)}
                                             className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                            title="Set as Default"
+                                            aria-label={`Set as default for ${name}`}
+                                            title={`Set as default for ${name}`}
                                         >
                                             <Star className="w-4 h-4" />
                                         </button>
@@ -1085,7 +1086,8 @@ const ProvidersPage: React.FC = () => {
                                         onClick={() => handleTestConnection(name, providerData)}
                                         disabled={testingProvider === name}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-                                        title="Test Connection"
+                                        aria-label={`Test connection for ${name}`}
+                                        title={`Test connection for ${name}`}
                                     >
                                         {testingProvider === name ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1100,14 +1102,16 @@ const ProvidersPage: React.FC = () => {
                                     <button
                                         onClick={() => handleEditProvider(name)}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                        title="Settings"
+                                        aria-label={`Settings for ${name}`}
+                                        title={`Settings for ${name}`}
                                     >
                                         <Settings className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDeleteProvider(name)}
                                         className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors"
-                                        title="Delete"
+                                        aria-label={`Delete provider ${name}`}
+                                        title={`Delete provider ${name}`}
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
@@ -1176,7 +1180,8 @@ const ProvidersPage: React.FC = () => {
                                         onClick={() => handleTestConnection(name, providerData)}
                                         disabled={testingProvider === name}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-                                        title="Test Connection"
+                                        aria-label={`Test connection for ${name}`}
+                                        title={`Test connection for ${name}`}
                                     >
                                         {testingProvider === name ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1191,14 +1196,16 @@ const ProvidersPage: React.FC = () => {
                                     <button
                                         onClick={() => handleEditProvider(name)}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                        title="Settings"
+                                        aria-label={`Settings for ${name}`}
+                                        title={`Settings for ${name}`}
                                     >
                                         <Settings className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDeleteProvider(name)}
                                         className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors"
-                                        title="Delete"
+                                        aria-label={`Delete provider ${name}`}
+                                        title={`Delete provider ${name}`}
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>

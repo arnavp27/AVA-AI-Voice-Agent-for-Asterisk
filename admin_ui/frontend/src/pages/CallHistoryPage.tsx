@@ -9,6 +9,8 @@ import {
 import axios from 'axios';
 import { toast } from 'sonner';
 import { EmptyState } from '../components/ui/EmptyState';
+
+import { IconButton } from '../components/ui/IconButton';
 import { FullscreenPanel } from '../components/ui/FullscreenPanel';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -699,6 +701,7 @@ const CallHistoryPage = () => {
                     <button
                         onClick={() => setShowStats(!showStats)}
                         className={`p-2 rounded-lg border transition-colors ${showStats ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                        aria-label="Toggle Stats"
                         title="Toggle Stats"
                     >
                         <BarChart3 className="w-5 h-5" />
@@ -706,6 +709,7 @@ const CallHistoryPage = () => {
                     <button
                         onClick={() => { fetchCalls(); fetchStats(); }}
                         className="p-2 rounded-lg border hover:bg-muted"
+                        aria-label="Refresh"
                         title="Refresh"
                     >
                         <RefreshCw className="w-5 h-5" />
@@ -714,6 +718,7 @@ const CallHistoryPage = () => {
                         <button
                             onClick={() => setShowFilters(!showFilters)}
                             className={`p-2 rounded-lg border transition-colors ${showFilters || hasActiveFilters ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                            aria-label="Filters"
                             title="Filters"
                         >
                             <Filter className="w-5 h-5" />
@@ -797,17 +802,17 @@ const CallHistoryPage = () => {
                                 <Phone className="w-4 h-4" />
                                 Total Calls
                             </div>
-                            <div className="text-2xl font-bold mt-1">{stats.total_calls}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{stats.total_calls}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
                                 <PieChart className="w-4 h-4" />
                                 Success / Failed
                             </div>
-                            <div className="text-2xl font-bold mt-1">
+                            <div className="text-2xl font-bold mt-1 tabular-nums">
                                 {stats.outcomes?.completed || 0} / {stats.outcomes?.error || 0}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground tabular-nums">
                                 {stats.total_calls > 0
                                     ? Math.round(((stats.outcomes?.completed || 0) / stats.total_calls) * 100)
                                     : 0}% success rate
@@ -818,14 +823,14 @@ const CallHistoryPage = () => {
                                 <Activity className="w-4 h-4" />
                                 Active Calls
                             </div>
-                            <div className="text-2xl font-bold mt-1">{stats.active_calls || 0}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{stats.active_calls || 0}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
                                 <Timer className="w-4 h-4" />
                                 Avg Duration
                             </div>
-                            <div className="text-2xl font-bold mt-1">{formatDuration(stats.avg_duration_seconds)}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{formatDuration(stats.avg_duration_seconds)}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -844,7 +849,7 @@ const CallHistoryPage = () => {
                             <div className="text-lg font-bold mt-1 truncate">
                                 {Object.entries(stats.top_tools || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '-'}
                             </div>
-                            <div className="text-xs text-muted-foreground">{stats.calls_with_tools} calls used tools</div>
+                            <div className="text-xs text-muted-foreground tabular-nums">{stats.calls_with_tools} calls used tools</div>
                         </div>
                     </div>
                 </FullscreenPanel>
@@ -1058,7 +1063,7 @@ const CallHistoryPage = () => {
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm">{formatDate(call.start_time)}</td>
-                                        <td className="px-4 py-3 text-sm">{formatDuration(call.duration_seconds)}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{formatDuration(call.duration_seconds)}</td>
                                         <td className="px-4 py-3 text-sm">{call.pipeline_name || call.provider_name}</td>
                                         <td className="px-4 py-3">
                                             {call.context_name ? (
@@ -1083,17 +1088,18 @@ const CallHistoryPage = () => {
                                                 <span className="text-sm capitalize">{outcomeLabel(call.outcome)}</span>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm">{call.total_turns}</td>
-                                        <td className="px-4 py-3 text-sm">{(call.avg_turn_latency_ms / 1000).toFixed(1)}s</td>
-                                        <td className="px-4 py-3 text-sm">{call.barge_in_count}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{call.total_turns}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{(call.avg_turn_latency_ms / 1000).toFixed(1)}s</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{call.barge_in_count}</td>
                                         <td className="px-4 py-3 text-center w-20">
-                                            <button
+                                            <IconButton
+                                                icon={Trash2}
+                                                variant="destructive"
+                                                label="Delete"
                                                 onClick={(e) => { e.stopPropagation(); handleDelete(call.id); }}
                                                 className="p-2 hover:bg-destructive/10 rounded text-destructive"
                                                 title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            />
                                         </td>
                                     </tr>
                                 ))}
@@ -1107,23 +1113,25 @@ const CallHistoryPage = () => {
                             Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, total)} of {total} calls
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
+                            <IconButton
+                                icon={ChevronLeft}
+                                iconClassName="w-5 h-5"
+                                label="Previous page"
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1}
                                 className="p-2 rounded-lg border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronLeft className="w-5 h-5" />
-                            </button>
+                            />
                             <span className="text-sm">
                                 Page {page} of {totalPages}
                             </span>
-                            <button
+                            <IconButton
+                                icon={ChevronRight}
+                                iconClassName="w-5 h-5"
+                                label="Next page"
                                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                 disabled={page === totalPages}
                                 className="p-2 rounded-lg border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronRight className="w-5 h-5" />
-                            </button>
+                            />
                         </div>
                     </div>
                 </FullscreenPanel>
@@ -1154,13 +1162,15 @@ const CallHistoryPage = () => {
                                 >
                                     Troubleshoot
                                 </button>
-                                <button
+                                <IconButton
+                                    icon={Trash2}
+                                    iconClassName="w-5 h-5"
+                                    variant="destructive"
+                                    label="Delete this call"
                                     onClick={() => handleDelete(modalCall.id)}
                                     className="p-2 hover:bg-destructive/10 rounded-lg text-destructive"
                                     title="Delete this call"
-                                >
-                                    <Trash2 className="w-5 h-5" />
-                                </button>
+                                />
                                 <button
                                     onClick={closeCallDetails}
                                     className="p-2 hover:bg-muted rounded-lg"
@@ -1184,6 +1194,7 @@ const CallHistoryPage = () => {
                                     <button
                                         onClick={handlePlayRecording}
                                         className="flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+                                        aria-label={audioPlaying ? 'Pause' : 'Play recording'}
                                         title={audioPlaying ? 'Pause' : 'Play recording'}
                                     >
                                         {audioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
