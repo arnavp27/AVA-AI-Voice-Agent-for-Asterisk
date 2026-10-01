@@ -1076,8 +1076,8 @@ const ProvidersPage: React.FC = () => {
                                         <button
                                             onClick={() => handleSetAsDefault(name)}
                                             className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                            aria-label="Set as Default"
-                                            title="Set as Default"
+                                            aria-label={`Set as default for ${name}`}
+                                            title={`Set as default for ${name}`}
                                         >
                                             <Star className="w-4 h-4" />
                                         </button>
@@ -1086,8 +1086,8 @@ const ProvidersPage: React.FC = () => {
                                         onClick={() => handleTestConnection(name, providerData)}
                                         disabled={testingProvider === name}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-                                        aria-label="Test Connection"
-                                        title="Test Connection"
+                                        aria-label={`Test connection for ${name}`}
+                                        title={`Test connection for ${name}`}
                                     >
                                         {testingProvider === name ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1102,16 +1102,16 @@ const ProvidersPage: React.FC = () => {
                                     <button
                                         onClick={() => handleEditProvider(name)}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                        aria-label="Settings"
-                                        title="Settings"
+                                        aria-label={`Settings for ${name}`}
+                                        title={`Settings for ${name}`}
                                     >
                                         <Settings className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDeleteProvider(name)}
                                         className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors"
-                                        aria-label="Delete"
-                                        title="Delete"
+                                        aria-label={`Delete provider ${name}`}
+                                        title={`Delete provider ${name}`}
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
@@ -1180,8 +1180,8 @@ const ProvidersPage: React.FC = () => {
                                         onClick={() => handleTestConnection(name, providerData)}
                                         disabled={testingProvider === name}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-                                        aria-label="Test Connection"
-                                        title="Test Connection"
+                                        aria-label={`Test connection for ${name}`}
+                                        title={`Test connection for ${name}`}
                                     >
                                         {testingProvider === name ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1196,16 +1196,16 @@ const ProvidersPage: React.FC = () => {
                                     <button
                                         onClick={() => handleEditProvider(name)}
                                         className="p-1.5 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                                        aria-label="Settings"
-                                        title="Settings"
+                                        aria-label={`Settings for ${name}`}
+                                        title={`Settings for ${name}`}
                                     >
                                         <Settings className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDeleteProvider(name)}
                                         className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors"
-                                        aria-label="Delete"
-                                        title="Delete"
+                                        aria-label={`Delete provider ${name}`}
+                                        title={`Delete provider ${name}`}
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>

@@ -375,8 +375,8 @@ const DockerPage = () => {
                                                 onClick={() => handleRestart(containerName, containerName)}
                                                 disabled={isRestarting}
                                                 className="p-2 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50"
-                                                aria-label="Restart container"
-                                                title="Restart container"
+                                                aria-label={`Restart container ${containerName}`}
+                                                title={`Restart container ${containerName}`}
                                             >
                                                 <RefreshCw className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} />
                                             </button>
