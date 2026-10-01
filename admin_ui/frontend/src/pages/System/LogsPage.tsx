@@ -5,6 +5,7 @@ import { RefreshCw, Pause, Play, Terminal, ArrowDown, ChevronDown, Download, Fil
 import { useSearchParams } from 'react-router-dom';
 import { parseAnsi } from '../../utils/ansi';
 import { describeApiError } from '../../utils/apiErrors';
+import { EmptyState } from '../../components/ui/EmptyState';
 import CallTroubleshootView from '../../components/logs/CallTroubleshootView';
 
 type LogLevel = 'error' | 'warning' | 'info' | 'debug';
@@ -1133,28 +1134,30 @@ const LogsPage = () => {
                             </div>
                         ) : logs ? (
                             rawLevels.length === 1 && rawLevels[0] === 'debug' ? (
-                                <div className="text-gray-400">
-                                    No debug logs found.<br/><br/>
-                                    <span className="text-gray-500">
+                                <EmptyState
+                                    icon={Terminal}
+                                    variant="console"
+                                    title="No debug logs found."
+                                    message={<>
                                         Debug logging may be disabled. To enable:<br/>
                                         1. Set <span className="text-blue-400">LOG_LEVEL=DEBUG</span> in your .env file<br/>
                                         2. Restart the container: <span className="text-blue-400">docker compose up -d --force-recreate {container}</span>
-                                    </span>
-                                </div>
+                                    </>}
+                                />
                             ) : rawLevels.length > 0 && !rawLevels.includes('info') && !rawLevels.includes('warning') && !rawLevels.includes('error') ? (
-                                <div className="text-gray-400">
-                                    No logs found for selected level(s): {rawLevels.join(', ')}<br/><br/>
-                                    <span className="text-gray-500">
-                                        Try selecting additional levels like 'info' or 'warning'.
-                                    </span>
-                                </div>
+                                <EmptyState
+                                    icon={Terminal}
+                                    variant="console"
+                                    title={`No logs found for selected level(s): ${rawLevels.join(', ')}`}
+                                    message="Try selecting additional levels like 'info' or 'warning'."
+                                />
                             ) : q ? (
-                                <div className="text-gray-400 italic">No lines match the filter.</div>
+                                <EmptyState icon={Terminal} variant="console" title="No lines match the filter." />
                             ) : (
-                                <div className="text-gray-400">No logs available...</div>
+                                <EmptyState icon={Terminal} variant="console" title="No logs available..." />
                             )
                         ) : (
-                            <div className="text-gray-400">No logs available...</div>
+                            <EmptyState icon={Terminal} variant="console" title="No logs available..." />
                         )}
                     </>
                 )}

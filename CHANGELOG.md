@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Shared Admin UI empty states** ([#342](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/342)): Call History, raw Logs, and Docker now use a reusable EmptyState component. Call History retains its existing appearance and filter-specific message; Logs keeps its dark-console styling and filter/debug guidance; Docker keeps loading and errors separate from empty results.
+
 ### Deprecated
 
 - **Unused farewell hangup delay** ([#677](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/677)): `farewell_hangup_delay_sec` is deprecated and ignored. Removed its misleading Admin UI controls and shipped YAML value; existing global/provider YAML values and the tools settings API remain compatible. Terminal hangups continue to drain caller-facing audio, including the pipeline fallback when an LLM speaks a farewell without invoking `hangup_call`. Historical 2.5/3/5-second defaults no longer describe runtime behavior.

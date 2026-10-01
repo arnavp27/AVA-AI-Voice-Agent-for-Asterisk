@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { EmptyState } from '../components/ui/EmptyState';
 import { FullscreenPanel } from '../components/ui/FullscreenPanel';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -1005,17 +1006,13 @@ const CallHistoryPage = () => {
 
             {/* Empty State */}
             {!loading && !error && calls.length === 0 && (
-                <div className="bg-card border rounded-lg p-12 text-center">
-                    <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <Phone className="w-8 h-8 text-muted-foreground" />
-                    </div>
-                    <h2 className="text-xl font-semibold mb-2">No Calls Found</h2>
-                    <p className="text-muted-foreground">
-                        {hasActiveFilters 
-                            ? 'No calls match your filters. Try adjusting your search criteria.'
-                            : 'Call history will appear here once calls are made.'}
-                    </p>
-                </div>
+                <EmptyState
+                    icon={Phone}
+                    title="No Calls Found"
+                    message={hasActiveFilters
+                        ? 'No calls match your filters. Try adjusting your search criteria.'
+                        : 'Call history will appear here once calls are made.'}
+                />
             )}
 
             {/* Call List */}

@@ -274,4 +274,19 @@ describe('CallHistoryPage deep links', () => {
             expect(callsRequest?.[1]).toMatchObject({ params: { page: 1 } });
         });
     });
+    it('keeps the empty-history message distinct from an empty filter result', async () => {
+        const get = vi.mocked(axios.get).getMockImplementation()!;
+        vi.mocked(axios.get).mockImplementation(async (url, config) => {
+            if (url === '/api/calls') return { data: { calls: [], total: 0, total_pages: 1 } };
+            return get(url, config);
+        });
+        render(<MemoryRouter initialEntries={['/history']}><CallHistoryPage /></MemoryRouter>);
+
+        expect(await screen.findByRole('heading', { name: 'No Calls Found', level: 2 })).toBeInTheDocument();
+        expect(screen.getByText('Call history will appear here once calls are made.')).toBeInTheDocument();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Search transcripts' }), { target: { value: 'missing' } });
+        expect(await screen.findByText('No calls match your filters. Try adjusting your search criteria.')).toBeInTheDocument();
+        expect(screen.queryByText('Call history will appear here once calls are made.')).not.toBeInTheDocument();
+    });
+
 });
