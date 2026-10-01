@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Accessible Admin UI icon controls** ([#340](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/340), [#341](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/341)): adds a shared IconButton for Call History, Pipeline, Profile, and guarded legacy Context actions, and fills missing accessible names across pages and nested System controls. Dynamic playback and fullscreen labels follow the current action; existing deletion safeguards and disabled-state tooltips are preserved.
 
+- **Aligned Admin UI numeric displays** ([#343](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/343)): Call History numeric table cells and summary values, Call Scheduling duration and attempt cells, and Dashboard resource metric values and subvalues now use tabular numerals. Existing columns and number formatting are unchanged.
+
 ### Deprecated
 
 - **Unused farewell hangup delay** ([#677](https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk/issues/677)): `farewell_hangup_delay_sec` is deprecated and ignored. Removed its misleading Admin UI controls and shipped YAML value; existing global/provider YAML values and the tools settings API remain compatible. Terminal hangups continue to drain caller-facing audio, including the pipeline fallback when an LLM speaks a farewell without invoking `hangup_call`. Historical 2.5/3/5-second defaults no longer describe runtime behavior.

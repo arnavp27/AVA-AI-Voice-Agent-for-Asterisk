@@ -72,8 +72,8 @@ const CompactMetric = ({ title, value, subValue, icon: Icon, color }: CompactMet
         <Icon className={`w-5 h-5 ${color} flex-shrink-0`} />
         <div className="min-w-0">
             <div className="text-xs text-muted-foreground">{title}</div>
-            <div className="text-lg font-bold">{value}</div>
-            {subValue && <div className="text-[10px] text-muted-foreground truncate">{subValue}</div>}
+            <div className="text-lg font-bold tabular-nums">{value}</div>
+            {subValue && <div className="text-[10px] text-muted-foreground truncate tabular-nums">{subValue}</div>}
         </div>
     </div>
 );
