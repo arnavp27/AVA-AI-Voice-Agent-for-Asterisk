@@ -7,9 +7,11 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 import CallHistoryPage from './CallHistoryPage';
 
+const mocks = vi.hoisted(() => ({ confirm: vi.fn() }));
+
 vi.mock('axios');
 vi.mock('../hooks/useConfirmDialog', () => ({
-    useConfirmDialog: () => ({ confirm: vi.fn().mockResolvedValue(false) }),
+    useConfirmDialog: () => ({ confirm: mocks.confirm }),
 }));
 
 const callDetail = {
@@ -74,6 +76,7 @@ const FullLocationProbe = () => {
 describe('CallHistoryPage deep links', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.confirm.mockResolvedValue(false);
         vi.mocked(axios.get).mockImplementation(async url => {
             if (url === '/api/calls') {
                 return { data: { calls: [callDetail], total: 51, total_pages: 2 } };
@@ -254,14 +257,15 @@ describe('CallHistoryPage deep links', () => {
             </MemoryRouter>
         );
 
-        const pageLabel = await screen.findByText('Page 1 of 2');
-        const pagination = pageLabel.parentElement;
-        const buttons = pagination?.querySelectorAll('button');
-        expect(buttons).toHaveLength(2);
-        fireEvent.click(buttons![1]);
+        expect(await screen.findByRole('button', { name: 'Previous page' })).toBeDisabled();
+        const nextPage = screen.getByRole('button', { name: 'Next page' });
+        expect(nextPage).toBeEnabled();
+        fireEvent.click(nextPage);
         expect(await screen.findByText('Page 2 of 2')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Previous page' })).toBeEnabled();
 
-        fireEvent.click(screen.getByTitle('Filters'));
+        fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
         fireEvent.change(screen.getByLabelText('Metadata Field'), {
             target: { value: 'customer_tier' },
         });
@@ -274,4 +278,62 @@ describe('CallHistoryPage deep links', () => {
             expect(callsRequest?.[1]).toMatchObject({ params: { page: 1 } });
         });
     });
+    it('keeps row deletion from opening call details and leaves the row intact on cancellation', async () => {
+        render(
+            <MemoryRouter initialEntries={['/history']}>
+                <CallHistoryPage />
+            </MemoryRouter>,
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Delete', exact: true }));
+
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+        expect(axios.delete).not.toHaveBeenCalled();
+        expect(screen.queryByRole('dialog', { name: 'Call Details' })).not.toBeInTheDocument();
+        expect(vi.mocked(axios.get).mock.calls.some(([url]) => url === '/api/calls/record-1')).toBe(false);
+        expect(screen.getByRole('button', { name: 'Delete', exact: true })).toBeInTheDocument();
+    });
+
+    it('updates the recording button name for play, pause, resume, and playback completion', async () => {
+        const get = vi.mocked(axios.get).getMockImplementation()!;
+        vi.mocked(axios.get).mockImplementation(async (url, config) => {
+            if (url === '/api/calls/record-1/recording') {
+                return { data: { has_recording: true, filename: 'call.wav', file_size_bytes: 1024 } };
+            }
+            if (url === '/api/calls/record-1/recording/audio') return { data: new Blob() };
+            return get(url, config);
+        });
+        const audio = document.createElement('audio');
+        audio.src = 'blob:recording';
+        const play = vi.spyOn(audio, 'play').mockResolvedValue(undefined);
+        const pause = vi.spyOn(audio, 'pause').mockImplementation(() => undefined);
+        vi.stubGlobal('Audio', vi.fn(function () { return audio; }));
+        vi.stubGlobal('URL', class extends URL {
+            static createObjectURL = vi.fn(() => 'blob:recording');
+            static revokeObjectURL = vi.fn();
+        });
+
+        const { unmount } = render(
+            <MemoryRouter initialEntries={['/history?id=record-1']}>
+                <CallHistoryPage />
+            </MemoryRouter>,
+        );
+        try {
+            fireEvent.click(await screen.findByRole('button', { name: 'Play recording' }));
+            const pauseButton = await screen.findByRole('button', { name: 'Pause', exact: true });
+            expect(pauseButton).toHaveAttribute('title', 'Pause');
+            fireEvent.click(pauseButton);
+            expect(pause).toHaveBeenCalledTimes(1);
+            fireEvent.click(screen.getByRole('button', { name: 'Play recording' }));
+            await screen.findByRole('button', { name: 'Pause', exact: true });
+            expect(play).toHaveBeenCalledTimes(2);
+            fireEvent.ended(audio);
+            expect(await screen.findByRole('button', { name: 'Play recording' })).toHaveAttribute('title', 'Play recording');
+        } finally {
+            unmount();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        }
+    });
+
 });

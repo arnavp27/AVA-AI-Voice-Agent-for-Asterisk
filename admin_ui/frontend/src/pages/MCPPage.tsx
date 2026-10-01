@@ -427,6 +427,7 @@ const MCPPage = () => {
                                         <button
                                             onClick={() => deleteServer(id)}
                                             className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background shadow-sm hover:bg-destructive/10 hover:text-destructive h-9 px-3 py-2"
+                                            aria-label="Delete server from config"
                                             title="Delete server from config"
                                         >
                                             <Trash2 className="w-4 h-4" />
@@ -613,6 +614,7 @@ const MCPPage = () => {
                                                 const next = serverForm.env.filter((_, i) => i !== idx);
                                                 setServerForm({ ...serverForm, env: next });
                                             }}
+                                            aria-label="Remove"
                                             title="Remove"
                                         >
                                             <Trash2 className="w-4 h-4" />
@@ -644,6 +646,7 @@ const MCPPage = () => {
                                                     const next = serverForm.tools.filter((_, i) => i !== idx);
                                                     setServerForm({ ...serverForm, tools: next });
                                                 }}
+                                                aria-label="Remove tool override"
                                                 title="Remove tool override"
                                             >
                                                 <Trash2 className="w-4 h-4" />

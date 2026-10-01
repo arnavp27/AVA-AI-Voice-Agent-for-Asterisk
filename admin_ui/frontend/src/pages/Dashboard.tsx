@@ -492,6 +492,7 @@ const Dashboard = () => {
                                 onClick={handleReconnectAri}
                                 disabled={reconnectingAri}
                                 className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                                aria-label="Restart AI Engine to reconnect ARI"
                                 title="Restart AI Engine to reconnect ARI"
                             >
                                 <Wrench className={`w-3.5 h-3.5 ${reconnectingAri ? 'animate-spin' : ''}`} />
@@ -518,6 +519,7 @@ const Dashboard = () => {
                                 onClick={handleFixDirectories}
                                 disabled={fixingDirectories}
                                 className="ml-2 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                                aria-label="Auto-Fix Issues"
                                 title="Auto-Fix Issues"
                             >
                                 <Wrench className={`w-3.5 h-3.5 ${fixingDirectories ? 'animate-spin' : ''}`} />

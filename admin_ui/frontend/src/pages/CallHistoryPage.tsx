@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { IconButton } from '../components/ui/IconButton';
 import { FullscreenPanel } from '../components/ui/FullscreenPanel';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -698,6 +699,7 @@ const CallHistoryPage = () => {
                     <button
                         onClick={() => setShowStats(!showStats)}
                         className={`p-2 rounded-lg border transition-colors ${showStats ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                        aria-label="Toggle Stats"
                         title="Toggle Stats"
                     >
                         <BarChart3 className="w-5 h-5" />
@@ -705,6 +707,7 @@ const CallHistoryPage = () => {
                     <button
                         onClick={() => { fetchCalls(); fetchStats(); }}
                         className="p-2 rounded-lg border hover:bg-muted"
+                        aria-label="Refresh"
                         title="Refresh"
                     >
                         <RefreshCw className="w-5 h-5" />
@@ -713,6 +716,7 @@ const CallHistoryPage = () => {
                         <button
                             onClick={() => setShowFilters(!showFilters)}
                             className={`p-2 rounded-lg border transition-colors ${showFilters || hasActiveFilters ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                            aria-label="Filters"
                             title="Filters"
                         >
                             <Filter className="w-5 h-5" />
@@ -1090,13 +1094,14 @@ const CallHistoryPage = () => {
                                         <td className="px-4 py-3 text-sm">{(call.avg_turn_latency_ms / 1000).toFixed(1)}s</td>
                                         <td className="px-4 py-3 text-sm">{call.barge_in_count}</td>
                                         <td className="px-4 py-3 text-center w-20">
-                                            <button
+                                            <IconButton
+                                                icon={Trash2}
+                                                variant="destructive"
+                                                label="Delete"
                                                 onClick={(e) => { e.stopPropagation(); handleDelete(call.id); }}
                                                 className="p-2 hover:bg-destructive/10 rounded text-destructive"
                                                 title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            />
                                         </td>
                                     </tr>
                                 ))}
@@ -1110,23 +1115,25 @@ const CallHistoryPage = () => {
                             Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, total)} of {total} calls
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
+                            <IconButton
+                                icon={ChevronLeft}
+                                iconClassName="w-5 h-5"
+                                label="Previous page"
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1}
                                 className="p-2 rounded-lg border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronLeft className="w-5 h-5" />
-                            </button>
+                            />
                             <span className="text-sm">
                                 Page {page} of {totalPages}
                             </span>
-                            <button
+                            <IconButton
+                                icon={ChevronRight}
+                                iconClassName="w-5 h-5"
+                                label="Next page"
                                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                 disabled={page === totalPages}
                                 className="p-2 rounded-lg border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ChevronRight className="w-5 h-5" />
-                            </button>
+                            />
                         </div>
                     </div>
                 </FullscreenPanel>
@@ -1157,13 +1164,15 @@ const CallHistoryPage = () => {
                                 >
                                     Troubleshoot
                                 </button>
-                                <button
+                                <IconButton
+                                    icon={Trash2}
+                                    iconClassName="w-5 h-5"
+                                    variant="destructive"
+                                    label="Delete this call"
                                     onClick={() => handleDelete(modalCall.id)}
                                     className="p-2 hover:bg-destructive/10 rounded-lg text-destructive"
                                     title="Delete this call"
-                                >
-                                    <Trash2 className="w-5 h-5" />
-                                </button>
+                                />
                                 <button
                                     onClick={closeCallDetails}
                                     className="p-2 hover:bg-muted rounded-lg"
@@ -1187,6 +1196,7 @@ const CallHistoryPage = () => {
                                     <button
                                         onClick={handlePlayRecording}
                                         className="flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+                                        aria-label={audioPlaying ? 'Pause' : 'Play recording'}
                                         title={audioPlaying ? 'Pause' : 'Play recording'}
                                     >
                                         {audioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
