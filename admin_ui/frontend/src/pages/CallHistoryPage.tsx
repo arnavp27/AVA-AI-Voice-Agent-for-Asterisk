@@ -796,17 +796,17 @@ const CallHistoryPage = () => {
                                 <Phone className="w-4 h-4" />
                                 Total Calls
                             </div>
-                            <div className="text-2xl font-bold mt-1">{stats.total_calls}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{stats.total_calls}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
                                 <PieChart className="w-4 h-4" />
                                 Success / Failed
                             </div>
-                            <div className="text-2xl font-bold mt-1">
+                            <div className="text-2xl font-bold mt-1 tabular-nums">
                                 {stats.outcomes?.completed || 0} / {stats.outcomes?.error || 0}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground tabular-nums">
                                 {stats.total_calls > 0
                                     ? Math.round(((stats.outcomes?.completed || 0) / stats.total_calls) * 100)
                                     : 0}% success rate
@@ -817,14 +817,14 @@ const CallHistoryPage = () => {
                                 <Activity className="w-4 h-4" />
                                 Active Calls
                             </div>
-                            <div className="text-2xl font-bold mt-1">{stats.active_calls || 0}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{stats.active_calls || 0}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
                                 <Timer className="w-4 h-4" />
                                 Avg Duration
                             </div>
-                            <div className="text-2xl font-bold mt-1">{formatDuration(stats.avg_duration_seconds)}</div>
+                            <div className="text-2xl font-bold mt-1 tabular-nums">{formatDuration(stats.avg_duration_seconds)}</div>
                         </div>
                         <div className="bg-card border rounded-lg p-4">
                             <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -843,7 +843,7 @@ const CallHistoryPage = () => {
                             <div className="text-lg font-bold mt-1 truncate">
                                 {Object.entries(stats.top_tools || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '-'}
                             </div>
-                            <div className="text-xs text-muted-foreground">{stats.calls_with_tools} calls used tools</div>
+                            <div className="text-xs text-muted-foreground tabular-nums">{stats.calls_with_tools} calls used tools</div>
                         </div>
                     </div>
                 </FullscreenPanel>
@@ -1061,7 +1061,7 @@ const CallHistoryPage = () => {
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm">{formatDate(call.start_time)}</td>
-                                        <td className="px-4 py-3 text-sm">{formatDuration(call.duration_seconds)}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{formatDuration(call.duration_seconds)}</td>
                                         <td className="px-4 py-3 text-sm">{call.pipeline_name || call.provider_name}</td>
                                         <td className="px-4 py-3">
                                             {call.context_name ? (
@@ -1086,9 +1086,9 @@ const CallHistoryPage = () => {
                                                 <span className="text-sm capitalize">{outcomeLabel(call.outcome)}</span>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm">{call.total_turns}</td>
-                                        <td className="px-4 py-3 text-sm">{(call.avg_turn_latency_ms / 1000).toFixed(1)}s</td>
-                                        <td className="px-4 py-3 text-sm">{call.barge_in_count}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{call.total_turns}</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{(call.avg_turn_latency_ms / 1000).toFixed(1)}s</td>
+                                        <td className="px-4 py-3 text-sm tabular-nums">{call.barge_in_count}</td>
                                         <td className="px-4 py-3 text-center w-20">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleDelete(call.id); }}
